@@ -1,9 +1,58 @@
-# This is a sample Python script.
+import tkinter as tk
+import matplotlib.pyplot as plt
+from matplotlib.backend_bases import key_press_handler
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-# Press Umschalt+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+import numpy as np
+
+def main_window():
+    root = tk.Tk()
+
+    t = np.arange(0,3,0.01)
+
+    figure1 = plt.Figure(figsize=(6,5), dpi=100)
+    ax1 = figure1.add_subplot(111)
+    line1, = ax1.plot(t, 2 * np.sin(2 * np.pi * t))
+    ax1.set_xlabel("Time [s]")
+    ax1.set_ylabel("f(t)")
 
 
+    canvas = FigureCanvasTkAgg(figure1, master=root)
+    canvas.draw()
+
+    toolbar = NavigationToolbar2Tk(canvas, root, pack_toolbar=False)
+    toolbar.update()
+
+    canvas.mpl_connect(
+        "key_press_event", lambda event: print(f"you pressed {event.key}"))
+    canvas.mpl_connect("key_press_event", key_press_handler)
+
+    button_quit = tk.Button(master=root, text="Quit", command=root.quit)
+
+    def update_frequency(new_val):
+        # retrieve frequency
+        f = float(new_val)
+
+        # update data
+        y = 2 * np.sin(2 * np.pi * f * t)
+        line1.set_data(t, y)
+
+        # required to update canvas and attached toolbar!
+        canvas.draw()
+
+    slider_update = tk.Scale(root, from_=1, to=5, orient=tk.HORIZONTAL,
+                                  command=update_frequency, label="Frequency [Hz]")
+
+    # Packing order is important. Widgets are processed sequentially and if there
+    # is no space left, because the window is too small, they are not displayed.
+    # The canvas is rather flexible in its size, so we pack it last which makes
+    # sure the UI controls are displayed as long as possible.
+    button_quit.pack(side=tk.BOTTOM)
+    slider_update.pack(side=tk.BOTTOM)
+    toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+    canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+
+    root.mainloop()
 def print_hi(name):
     # Use a breakpoint in the code line below to debug your script.
     print(f'Hi, {name}')  # Press Strg+F8 to toggle the breakpoint.
@@ -11,6 +60,7 @@ def print_hi(name):
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    print_hi('PyCharm')
+    main_window()
+
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
