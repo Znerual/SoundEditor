@@ -30,6 +30,14 @@ def test_VersionControlArray_history():
     assert array.history[2][0] == slice(1,3)
     assert np.all(array.history[2][1] == np.array([2,3]))
 
+
+def test_VersionControlArray_set_no_undo():
+    array = VersionControlArray([2,3,4], dtype=int)
+    assert array[1] == 3
+    array.set_no_undo(1, -1)
+    assert array[1] == -1
+    assert array.history == []
+
 def test_VersionControlArray_undo():
     array = VersionControlArray([1, 2, 3, 4], dtype=int)
     array[0] = -1
