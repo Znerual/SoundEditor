@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 import typing
 
@@ -5,11 +7,14 @@ from typing import Optional, Any
 from numpy.typing import NDArray
 from dataclasses import dataclass, field
 
+
 class VersionControlException(IndexError):
     pass
 
+
 class AudioDataException(Exception):
     pass
+
 
 class VersionControlArray:
     """ Creates an array that saves changes to it"""
@@ -35,7 +40,7 @@ class VersionControlArray:
         self._redo = []
         self._data.__setitem__(key, value)
 
-    def view(self, *args, **kwargs):
+    def view(self, *args, **kwargs) -> NDArray:
         return self._data.view(*args, **kwargs)
 
     def set_no_undo(self, key, value):
@@ -73,34 +78,37 @@ class VersionControlArray:
     def history(self):
         return self._history
 
-@dataclass()
+
+@dataclass
 class AudioData:
-    _time_data : Optional[VersionControlArray] = None
-    _freq_data : Optional[VersionControlArray] = None
-    _freq_x : Optional[NDArray[np.dtype["float64"]]] = None
-    _time_x : Optional[NDArray[np.dtype["float64"]]] = None
-    _freq_dom_ind : Optional[NDArray[np.dtype[int]]] = None
-    _fs : Optional[int] = -1
-    _seconds : Optional[float] = -1
-    _freq_sel_start_ind : int = -1
-    _freq_sel_end_ind : int = -1
+    _time_data: VersionControlArray = field(init=False)
+    _freq_data: VersionControlArray = field(init=False)
+    _freq_x: NDArray[np.double] = field(init=False)
+    _time_x: NDArray[np.double] = field(init=False)
+    _fs: int = -1
+    _seconds: float = -1
+    _freq_sel_start_ind: int = -1
+    _freq_sel_end_ind: int = -1
 
     @classmethod
-    def from_file(cls, filename : str) -> "AudioData":
+    def from_file(cls, filename: str) -> AudioData:
         """ Initializer from a file"""
         import soundfile as sf
 
         # create new instance and call parent initializer
-        instance = cls.__new__(cls)
+        instance: AudioData = cls.__new__(cls)
         super(cls, instance).__init__()
 
         # fill audio data with loaded information
-        instance._time_data, instance._fs = sf.read(filename, dtype='float32')
+        raw_time_data, instance._fs = sf.read(filename, dtype=np.double)
+        instance._time_data = VersionControlArray(raw_time_data)
         instance._seconds = instance._time_data.shape[0] / instance.fs
-        instance._time_x = np.arange(0, instance.seconds, 1 / instance.fs)
+        instance._time_x = np.arange(0, instance.seconds, 1 / instance.fs, dtype=np.double)
+
         return instance
 
-    def _four_trans_seq(self):
+    def _four_trans_seq(self) -> None:
+        """ transform a part of the audio data from time domain to frequency domain """
         from scipy.fft import fft, fftfreq
         if self._freq_sel_start_ind == -1 or self._freq_sel_end_ind == -1:
             raise AudioDataException(f"Invalid frequency indices {self._freq_sel_start_ind}:{self._freq_sel_end_ind}")
@@ -109,68 +117,102 @@ class AudioData:
         self._freq_x = fftfreq(N, T)[:N // 2]  # positive frequencies
 
         # create version controlled array and fill without creating history
-        self._freq_data = VersionControlArray.empty((N,2), dtype="complex64")
-        self._freq_data.set_no_undo((slice(None, None, 1),0), fft(self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0]))
-        self._freq_data.set_no_undo((slice(None, None, 1),1), fft(self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1]))
+        self._freq_data = VersionControlArray.empty((N, 2), dtype="complex64")
+        self._freq_data.set_no_undo((slice(None, None, 1), 0),
+                                    fft(self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0]))
+        self._freq_data.set_no_undo((slice(None, None, 1), 1),
+                                    fft(self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1]))
 
+    def find_peaks(self, n_dom: int = 6, chanel: int = 0) -> NDArray[np.int32]:
+        """ find peaks in the frequency spectrum """
+        from scipy.signal import find_peaks
 
-    def _find_peaks(self, n_dom=6):
-        k_dom_ind = np.zeros((n_dom, 2), dtype="int32")
-        yf0_tmp = np.abs(yf[:, 0])[:N // 2]
-        yf1_tmp = np.abs(yf[:, 1])[:N // 2]
+        k_dom_ind: NDArray[np.int32] = np.zeros((n_dom,), dtype="int32")
+        delta_freq: float = self._freq_x[1] - self._freq_x[0]
+        yf_tmp = np.abs(self._freq_data[:, chanel])[:self._freq_data.shape[0] // 2]
+
         # dominant frequencies
-        # channel 1
-        peaks1, _ = find_peaks(yf0_tmp, height=0, distance=int(40 / (xf[1] - xf[0])), prominence=0.5)
-        if peaks1.shape[0] >= n_dom:
-            idx = np.argpartition(yf0_tmp[peaks1], -n_dom)[-n_dom:]
-            index = idx[np.argsort(-yf0_tmp[peaks1][idx])]
-            k_dom_ind[:, 0] = peaks1[index]
+        peaks, _ = find_peaks(yf_tmp, height=0, distance=int(40 / delta_freq) + 1, prominence=0.5)
 
-        # channel 2
-        peaks2, _ = find_peaks(yf1_tmp, height=0, distance=int(40 / (xf[1] - xf[0])), prominence=0.5)
-        if peaks2.shape[0] >= n_dom:
-            idx = np.argpartition(yf1_tmp[peaks2], -n_dom)[-n_dom:]
-            index = idx[np.argsort(-yf1_tmp[peaks2][idx])]
-            k_dom_ind[:, 1] = peaks2[index]
+        if peaks.shape[0] >= n_dom:
+            idx = np.argpartition(yf_tmp[peaks], -n_dom)[-n_dom:]
+            index = idx[np.argsort(-yf_tmp[peaks][idx])]
+            k_dom_ind[:] = peaks[index]
 
-    def time(self, start_index=0, end_index=None, chanel=0):
+        return k_dom_ind
+
+    @property
+    def time(self) -> VersionControlArray:
+        """ Get time data Version Control Array """
+        return self._time_data
+
+    def freq(self, start_index: int = 0, end_index: Optional[int] = None) -> VersionControlArray:
+        """ Get frequency data Version Control Array and generate Fourier Transform if not existing """
+        if not (start_index == self._freq_sel_start_ind and end_index == self._freq_sel_end_ind):
+            self._freq_sel_start_ind = start_index
+            self._freq_sel_end_ind = self._time_data.shape[0] if end_index is None else end_index
+            self._four_trans_seq()
+
+        return self._freq_data
+
+    def time_no_undo(self, start_index: int = 0, end_index: Optional[int] = None, chanel: int = 0) -> NDArray[
+        np.float32]:
         """ gets a view of the audio data in time domain """
-        view = self._time_data.view()
+        view: NDArray[np.float32] = self._time_data.view()
         view.shape = (self._time_data.shape[0] * 2,)
         if end_index is None:
             return view[chanel + 2 * start_index::2]
         else:
-            return view[chanel+2*start_index:chanel+2*end_index:2]
+            return view[chanel + 2 * start_index:chanel + 2 * end_index:2]
 
-    def freq(self, start_index=0, end_index=None, chanel=0):
+    def freq_no_undo(self, start_index: int = 0, end_index: Optional[int] = None, chanel: int = 0) -> NDArray[
+        np.csingle]:
         """ gets the view of the audio data in frequency domain """
         if not (start_index == self._freq_sel_start_ind and end_index == self._freq_sel_end_ind):
             self._freq_sel_start_ind = start_index
             self._freq_sel_end_ind = self._time_data.shape[0] if end_index is None else end_index
             self._four_trans_seq()
 
-        view = self._freq_data.view()
+        view: NDArray[np.csingle] = self._freq_data.view()
         view.shape = (self._freq_data.shape[0] * 2,)
         return view[chanel::2]
 
-    def freq_to_time(self):
+    def freq_undo(self) -> None:
+        """ Undo changes made to the frequency data"""
+        self._freq_data.undo()
+
+    def time_undo(self) -> None:
+        """ Undo changes made to the time data"""
+        self._time_data.undo()
+
+    def freq_redo(self) -> None:
+        """ Redo changes to frequency data"""
+        self._freq_data.redo()
+
+    def time_redo(self) -> None:
+        """ Redo changes to time data """
+        self._time_data.redo()
+
+    def freq_to_time(self) -> None:
         """ converts the frequency data to audio data and write it to _time_data"""
         from scipy.fft import ifft
         if self._freq_sel_start_ind == -1 or self._freq_sel_end_ind == -1:
             raise AudioDataException(f"Invalid frequency indices {self._freq_sel_start_ind}:{self._freq_sel_end_ind}")
 
-        self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0] = ifft(self._freq_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0])
-        self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1] = ifft(self._freq_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1])
+        self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0] = ifft(
+            self._freq_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0])
+        self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1] = ifft(
+            self._freq_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1])
 
     @property
-    def fs(self):
+    def fs(self) -> int:
         """ fs property"""
         if self._fs == -1:
             raise AudioDataException("No fs information available. Check if AudioData was loaded correctly.")
         return self._fs
 
     @property
-    def seconds(self):
+    def seconds(self) -> float:
         """ seconds property"""
         if self._seconds == -1:
             raise AudioDataException("No seconds information available. Check if AudioData was loaded correctly.")
