@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-import typing
 
-from typing import Optional, Any
+from typing import Optional
 from numpy.typing import NDArray
 from dataclasses import dataclass, field
 
