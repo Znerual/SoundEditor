@@ -3,7 +3,7 @@ from typing import List, Callable, Optional
 
 import numpy as np
 
-from .AudioData import AudioData
+from .AudioData import AudioData, VersionControlException
 from .DataView import DataView
 from numpy.typing import NDArray
 
@@ -41,14 +41,14 @@ class CommandManager:
 
     def undo(self) -> None:
         if len(self._history) == 0:
-            raise CommandException("Can't undo, history is empty")
+            raise VersionControlException("Can't undo, history is empty")
         last_action = self._history.pop()
         last_action.undo()
         self._redo.append(last_action)
 
     def redo(self) -> None:
         if len(self._redo) == 0:
-            raise CommandException("Can't redo, history is empty")
+            raise VersionControlException("Can't redo, history is empty")
         last_action = self._redo.pop()
         last_action.redo()
         self._history.append(last_action)
@@ -73,12 +73,17 @@ class SetFreq(Command):
             listener.freq_change_callback(self.start_index, self.end_index)
 
     def undo(self) -> None:
+        """ undo a command. Check if nothing changed data inbetween"""
+        if np.all(self.target.freq(self.start_index, self.end_index)[:, self.chanel] != self.value):
+            raise VersionControlException("Can't undo command because data was changed.")
+
         self.target.freq_undo()
 
         for listener in self.listener:
             listener.freq_change_callback(self.start_index, self.end_index)
 
     def redo(self) -> None:
+        """ redos the command"""
         self.target.freq_redo()
 
         for listener in self.listener:
