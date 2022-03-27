@@ -30,6 +30,18 @@ class VersionControlArray:
         instance._data = np.empty(shape, dtype=dtype, order=order)
         return instance
 
+    def real(self):
+        """ return a copy of the real part"""
+        return np.real(self._data).copy()
+
+    def imag(self):
+        """ returns a copy of the imaginary part"""
+        return np.image(self._data).copy()
+
+    def abs(self):
+        """ returns a copy of the array with only positive sign"""
+        return np.abs(self._data).copy()
+
     def __getitem__(self, item):
         return self._data[item]
 
@@ -102,7 +114,7 @@ class AudioData:
         raw_time_data, instance._fs = sf.read(filename, dtype=np.double)
         instance._time_data = VersionControlArray(raw_time_data)
         instance._seconds = instance._time_data.shape[0] / instance.fs
-        instance._time_x = np.arange(0, instance.seconds, 1 / instance.fs, dtype=np.double)
+        instance._time_x = np.arange(0, instance.seconds, 1 / instance.fs, dtype=np.float32)
 
         return instance
 
@@ -145,14 +157,38 @@ class AudioData:
         """ Get time data Version Control Array """
         return self._time_data
 
+    @property
+    def time_x(self) -> NDArray[np.float32]:
+        return self._time_x
+
+    @property
+    def N(self) -> int:
+        return self._freq_sel_end_ind - self._freq_sel_start_ind
+
     def freq(self, start_index: int = 0, end_index: Optional[int] = None) -> VersionControlArray:
-        """ Get frequency data Version Control Array and generate Fourier Transform if not existing """
+        """ Get view of frequency data Version Control Array and generate Fourier Transform if not existing """
         if not (start_index == self._freq_sel_start_ind and end_index == self._freq_sel_end_ind):
             self._freq_sel_start_ind = start_index
             self._freq_sel_end_ind = self._time_data.shape[0] if end_index is None else end_index
             self._four_trans_seq()
 
         return self._freq_data
+
+    def norm_freq(self,  start_index: Optional[int] = None, end_index: Optional[int] = None, chanel : int = 0) -> NDArray[np.csingle]:
+        """ Returns a copy of the normalized frequencies"""
+        if start_index is None:
+            start_index = self._freq_sel_start_ind
+        if end_index is None:
+            end_index = self._freq_sel_end_ind
+
+        return self.freq(start_index=start_index, end_index=end_index)[:self._freq_data.shape[0]//2, chanel] * 2.0 / self._freq_data.shape[0]
+
+    @property
+    def freq_x(self) -> NDArray[np.float32]:
+        if "_freq_x" not in dir(self) or self._freq_x is None:
+            raise AudioDataException("No frequency data available! Need a call to freq() or norm_freq() "
+                                     "before accessing freq_x data.")
+        return self._freq_x
 
     def time_no_undo(self, start_index: int = 0, end_index: Optional[int] = None, chanel: int = 0) -> NDArray[
         np.float32]:
