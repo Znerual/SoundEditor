@@ -1,10 +1,14 @@
-from abc import abstractmethod, ABCMeta
-from typing import List, Callable, Optional
+from __future__ import annotations
 
+import tkinter
+from abc import abstractmethod, ABCMeta
+from typing import List, Callable, Optional, Dict, Any, Union
+
+import matplotlib.backend_bases
 import numpy as np
 
 from .AudioData import AudioData, VersionControlException
-from .DataView import DataView
+
 from numpy.typing import NDArray
 
 
@@ -30,9 +34,30 @@ class Command(metaclass=ABCMeta):
 
 class CommandManager:
     """ Handles Command Objects """
-    def __init__(self):
+    def __init__(self, data: AudioData):
+        self._data: AudioData = data
         self._history: List[Command] = []
         self._redo: List[Command] = []
+        self._callbacks: Dict[str,
+                Callable[[CommandManager, Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]], None]] = {}
+
+    def register_callback(self, name : str, callback : Callable[[CommandManager, Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]], None]) -> None:
+        """ registers a callback under the name name which can be called"""
+        if name in self._callbacks:
+            raise CommandException(f"Can't register callback. {name} already exists!")
+
+        self._callbacks[name] = callback
+
+    def call(self, name : str, event : Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]) -> None:
+        """ call function used to trigger the callbacks"""
+        if not name in self._callbacks:
+            raise CommandException(f"No callback registered under the name {name}")
+
+        self._callbacks[name](self, event)
+
+    @property
+    def data(self) -> AudioData:
+        return self._data
 
     def do(self, command: Command) -> None:
         self._redo = []
@@ -57,7 +82,7 @@ class CommandManager:
 class SetFreq(Command):
     """ Set frequency values """
 
-    def __init__(self, start_index: int, end_index: int, value: NDArray[np.csingle], chanel: int, target: AudioData, listener: List[DataView] = []):
+    def __init__(self, start_index: int, end_index: int, value: NDArray[np.csingle], chanel: int, target: AudioData, listener: List["DataView"] = []):
         self.start_index = start_index
         self.end_index = end_index
         self.value = value.copy()
@@ -67,10 +92,10 @@ class SetFreq(Command):
 
     def do(self) -> None:
         """ Change frequency and notify listeners """
-        self.target.freq(start_index=self.start_index, end_index=self.end_index)[:, self.chanel] = self.value
-
+        #self.target.freq(start_index=self.start_index, end_index=self.end_index)[:, self.chanel] = self.value
+        self.target._freq_data[self.start_index:self.end_index, self.chanel] = self.value
         for listener in self.listener:
-            listener.freq_change_callback(self.start_index, self.end_index)
+            listener.freq_change_callback(self.target, self.start_index, self.end_index)
 
     def undo(self) -> None:
         """ undo a command. Check if nothing changed data inbetween"""
@@ -80,11 +105,28 @@ class SetFreq(Command):
         self.target.freq_undo()
 
         for listener in self.listener:
-            listener.freq_change_callback(self.start_index, self.end_index)
+            listener.freq_change_callback(self.target, self.start_index, self.end_index)
 
     def redo(self) -> None:
         """ redos the command"""
         self.target.freq_redo()
 
         for listener in self.listener:
-            listener.freq_change_callback(self.start_index, self.end_index)
+            listener.freq_change_callback(self.target, self.start_index, self.end_index)
+
+
+def equalizer_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent):
+    """ Click callback for equalizer plot"""
+    x_data = int(round(event.xdata))
+    delta_x = command_manager._data.freq_x[1] - command_manager._data.freq_x[0]
+    print(f"d_X: {delta_x}, x data: {x_data}, freq_x: {command_manager.data.freq_x}")
+    f_ind = np.where((command_manager.data.freq_x == x_data) | ((x_data - delta_x <= command_manager.data.freq_x) & (command_manager.data.freq_x <= x_data + delta_x)))[0]
+
+    if f_ind.shape == 3:
+        ind = f_ind[1]
+    else:
+        ind = f_ind[0]
+
+    print(f"Set index {ind} to value event.ydata * command_manager.data.N")
+    command = SetFreq(ind, ind+3, event.ydata * command_manager.data.N / 2, chanel=0, target=command_manager.data)
+    command_manager.do(command)
