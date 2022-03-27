@@ -1,6 +1,9 @@
 import pytest
 import numpy as np
 
+from numpy.typing import NDArray
+from typing import Any
+
 from SoundEditor.Commands import SetFreq, CommandManager
 from SoundEditor.DataView import DataView
 from SoundEditor.AudioData import AudioData, VersionControlException
@@ -82,7 +85,7 @@ def test_listener():
         def __init__(self):
             self.counter = 0
 
-        def freq_change_callback(self, index_start: int, index_end: int) -> None:
+        def freq_change_callback(self, index_start: int, index_end: int, value: NDArray[Any]) -> None:
             self.counter += 1
 
     dv = TestDataView()
