@@ -11,7 +11,7 @@ from SoundEditor.DataView import x_data_freq, y_data_freq_imag, y_data_freq_real
 def main():
     """ run the application"""
     root = tk.Tk()
-
+    root2 = tk.Toplevel(root)
     root.bind("<Key>", lambda x : print(x, type(x)))
     frequency_frame = tk.Frame(master=root)
     time_frame = tk.Frame(master=root)
@@ -24,10 +24,13 @@ def main():
     manager.register_callback("equ_clicked", equalizer_callback)
     start_index = 80000
     end_index = 81024
-    audio_data.freq(start_index, end_index)
+    audio_data.ft(start_index, end_index)
 
-    equ_dv = EqualizerFigureDataView(frequency_frame,
-                                     data= audio_data,
+    equ_dv = EqualizerFigureDataView(root2=root2,
+                                     position2=tk.TOP,
+                                     toolbar_pos2=TOOLBAR_POSITION.TOP,
+                                     root=frequency_frame,
+                                     data=audio_data,
                                      x=[x_data_freq, x_data_freq, x_data_freq],
                                      y=[y_data_freq_abs, y_data_freq_real, y_data_freq_imag],
                                      command_manager=manager,

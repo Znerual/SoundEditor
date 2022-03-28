@@ -41,19 +41,19 @@ class CommandManager:
         self._callbacks: Dict[str,
                 Callable[[CommandManager, Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]], None]] = {}
 
-    def register_callback(self, name : str, callback : Callable[[CommandManager, Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]], None]) -> None:
+    def register_callback(self, name : str, callback : Callable[[CommandManager, Union[matplotlib.backend_bases.MouseEvent, tkinter.Event], DataView], None]) -> None:
         """ registers a callback under the name name which can be called"""
         if name in self._callbacks:
             raise CommandException(f"Can't register callback. {name} already exists!")
 
         self._callbacks[name] = callback
 
-    def call(self, name : str, event : Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]) -> None:
+    def call(self, name : str, event : Union[matplotlib.backend_bases.MouseEvent, tkinter.Event], caller: DataView) -> None:
         """ call function used to trigger the callbacks"""
         if not name in self._callbacks:
             raise CommandException(f"No callback registered under the name {name}")
 
-        self._callbacks[name](self, event)
+        self._callbacks[name](self, event, caller)
 
     @property
     def data(self) -> AudioData:
@@ -92,14 +92,13 @@ class SetFreq(Command):
 
     def do(self) -> None:
         """ Change frequency and notify listeners """
-        #self.target.freq(start_index=self.start_index, end_index=self.end_index)[:, self.chanel] = self.value
-        self.target._freq_data[self.start_index:self.end_index, self.chanel] = self.value
+        self.target.freq[self.start_index:self.end_index, self.chanel] = self.value
         for listener in self.listener:
             listener.freq_change_callback(self.target, self.start_index, self.end_index)
 
     def undo(self) -> None:
         """ undo a command. Check if nothing changed data inbetween"""
-        if np.all(self.target.freq(self.start_index, self.end_index)[:, self.chanel] != self.value):
+        if np.all(self.target.freq[:, self.chanel] != self.value):
             raise VersionControlException("Can't undo command because data was changed.")
 
         self.target.freq_undo()
@@ -115,10 +114,10 @@ class SetFreq(Command):
             listener.freq_change_callback(self.target, self.start_index, self.end_index)
 
 
-def equalizer_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent):
+def equalizer_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, caller: DataView):
     """ Click callback for equalizer plot"""
     x_data = int(round(event.xdata))
-    delta_x = command_manager._data.freq_x[1] - command_manager._data.freq_x[0]
+    delta_x = command_manager.data.freq_x[1] - command_manager.data.freq_x[0]
     print(f"d_X: {delta_x}, x data: {x_data}, freq_x: {command_manager.data.freq_x}")
     f_ind = np.where((command_manager.data.freq_x == x_data) | ((x_data - delta_x <= command_manager.data.freq_x) & (command_manager.data.freq_x <= x_data + delta_x)))[0]
 
@@ -128,5 +127,5 @@ def equalizer_callback(command_manager: CommandManager, event: matplotlib.backen
         ind = f_ind[0]
 
     print(f"Set index {ind} to value event.ydata * command_manager.data.N")
-    command = SetFreq(ind, ind+3, event.ydata * command_manager.data.N / 2, chanel=0, target=command_manager.data)
+    command = SetFreq(ind, ind+3, event.ydata * command_manager.data.N / 2, chanel=0, target=command_manager.data, listener=[caller])
     command_manager.do(command)

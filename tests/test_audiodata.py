@@ -148,11 +148,16 @@ def test_freq():
     freq = ad.freq_no_undo(100)
     freq[4] = -11
     assert ad._freq_data[4, 0] == -11
-    freq[5] = -12
+    ad.freq[5,0] = -12
     assert ad._freq_data[5, 0] == -12
     freq[-1] = -13
     assert ad._freq_data[-1, 0] == -13
 
+def test_N():
+    ad: AudioData = AudioData.from_file("test.wav")
+    ad.ft(0, 1024)
+    assert ad.N == 1024
+    assert ad.freq.shape[0] == ad.N
 
 def test_time_undo():
     ad: AudioData = AudioData.from_file("test.wav")
@@ -184,10 +189,10 @@ def test_time_redo():
 
 def test_freq_undo():
     ad: AudioData = AudioData.from_file("test.wav")
-
-    ad.freq(0, 120)[30, 0] = -13
+    ad.ft(0, 120)
+    ad.freq[30, 0] = -13
     assert ad._freq_data[30, 0] == -13
-    ad.freq(0, 120)[30, 0] = -26
+    ad.freq[30, 0] = -26
     assert ad._freq_data[30, 0] == -26
     ad.freq_undo()
     assert ad._freq_data[30, 0] == -13
@@ -197,14 +202,14 @@ def test_freq_undo():
 
 def test_freq_redo():
     ad: AudioData = AudioData.from_file("test.wav")
-
-    ad.freq(0, 120)[30, 0] = -13
+    ad.ft(0, 120)
+    ad.freq[30, 0] = -13
     assert ad._freq_data[30, 0] == -13
-    ad.freq(0, 120)[30, 0] = -26
+    ad.freq[30, 0] = -26
     assert ad._freq_data[30, 0] == -26
     ad.freq_undo()
     assert ad._freq_data[30, 0] == -13
-    ad.freq(0, 120)[30, 0] = -40
+    ad.freq[30, 0] = -40
     with pytest.raises(VersionControlException):
         ad.freq_redo()
     assert ad._freq_data[30, 0] == -40

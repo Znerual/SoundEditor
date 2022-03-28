@@ -206,13 +206,99 @@ def y_data_freq_imag(data: AudioData) -> NDArray[np.float32]:
 
 class EqualizerFigureDataView(LineFigureDataView):
     """ Equalizer plot """
+    def __init__(self,
+                 root2: tk.Toplevel,
+                 position2: Union[tk.TOP, tk.BOTTOM, tk.LEFT, tk.RIGHT] = tk.TOP,
+                 toolbar_pos2: TOOLBAR_POSITION = TOOLBAR_POSITION.NONE,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.root2 = root2
+        self.position2 = position2
+        self.frame2 = tk.Frame(master=self.root2)
+        self.figure2 = plt.Figure(figsize=self.figsize, dpi=self.dpi)
+        self.ax2 = self.figure2.add_subplot(111)
+        self.ax2.set_xlim((200,300))
+        self.x_span = 100
+        self.canvas2 = FigureCanvasTkAgg(self.figure2, master=self.frame2)
+
+        xx = [x_tmp(self._data) for x_tmp in self._x]
+        yy = [y_tmp(self._data) for y_tmp in self._y]
+
+        for i, (x_tmp, y_tmp) in enumerate(zip(xx,yy)):
+            setattr(self, f"line2_{i}", self.ax2.plot(x_tmp, y_tmp)[0])
+
+        self.canvas2.draw()
+        self.canvas2.mpl_connect("button_press_event", self._subfigure_clicked)
+        self.canvas2.mpl_connect('scroll_event', self._subfigure_scrolled)
+        self.toolbar2 = NavigationToolbar2Tk(self.canvas2, self.frame2, pack_toolbar=False)
+        self.toolbar2.update()
+        if toolbar_pos2 == TOOLBAR_POSITION.TOP:
+            self.toolbar2.pack(side=tk.TOP, fill=tk.X)
+            self.canvas2.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        elif toolbar_pos2 == TOOLBAR_POSITION.BOTTOM:
+            self.toolbar2.pack(side=tk.BOTTOM, fill=tk.X)
+            self.canvas2.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=1)
+        elif toolbar_pos2 == TOOLBAR_POSITION.LEFT:
+            self.toolbar2.pack(side=tk.LEFT, fill=tk.Y)
+            self.canvas2.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=1)
+        elif toolbar_pos2 == TOOLBAR_POSITION.RIGHT:
+            self.toolbar2.pack(side=tk.RIGHT, fill=tk.Y)
+            self.canvas2.get_tk_widget().pack(side=tk.RIGHT, fill=tk.BOTH, expand=1)
+        elif toolbar_pos2 == TOOLBAR_POSITION.NONE:
+            self.canvas2.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        else:
+            raise DataViewException(f"Unexpected toolbar position: {toolbar_pos}")
+
+        if position2 == tk.TOP:
+            self.frame2.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        elif position2 == tk.BOTTOM:
+            self.frame2.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=1)
+        elif position2 == tk.LEFT:
+            self.frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=1)
+        elif position2 == tk.RIGHT:
+            self.frame2.pack(side=tk.RIGHT, fill=tk.BOTH, expand=1)
+        else:
+            raise DataViewException(f"Unexpected figure position: {position2}")
+
+    def set_data(self):
+        """ change data """
+        super().set_data()
+
+        xx = [x(self._data) for x in self._x]
+        yy = [y(self._data) for y in self._y]
+
+        for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
+            getattr(self, f"line2_{i}").set_xdata(x_tmp)
+            getattr(self, f"line2_{i}").set_ydata(y_tmp)
+
+        self.canvas2.draw()
 
     def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
+        self.ax2.set_xlim((data.freq_x[index_start] - self.x_span, data.freq_x[index_end] + self.x_span))
         self.set_data()
+
+    def _subfigure_clicked(self, event):
+        """ click on zoomed window"""
+        pass
+
+    def _subfigure_scrolled(self, event):
+        """ scrolled on zoom window """
+        #TODO check if mouse over axis and change x or y limits
+        print(event)
+        x_lim = self.ax2.get_xlim()
+        if event.button == "up":
+
+            self.x_span += 10
+            self.ax2.set_xlim(x_lim[0] - 10, x_lim[1] + 10)
+        else:
+            if self.x_span > 10:
+                self.x_span -= 10
+                self.ax2.set_xlim(x_lim[0] + 10, x_lim[1] - 10)
+
+        self.canvas2.draw()
 
     def _figure_clicked(self, event):
         """ Mouse click callback"""
         if self.command_manager is None:
             raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
-        self.command_manager.call("equ_clicked", event)
-        self.set_data()
+        self.command_manager.call("equ_clicked", event, self)

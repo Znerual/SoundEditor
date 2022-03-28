@@ -165,23 +165,22 @@ class AudioData:
     def N(self) -> int:
         return self._freq_sel_end_ind - self._freq_sel_start_ind
 
-    def freq(self, start_index: int = 0, end_index: Optional[int] = None) -> VersionControlArray:
-        """ Get view of frequency data Version Control Array and generate Fourier Transform if not existing """
+    def ft(self, start_index: int, end_index: Optional[int] = None):
+        """ Fourier transforms the given audio segment """
         if not (start_index == self._freq_sel_start_ind and end_index == self._freq_sel_end_ind):
             self._freq_sel_start_ind = start_index
             self._freq_sel_end_ind = self._time_data.shape[0] if end_index is None else end_index
             self._four_trans_seq()
 
+    @property
+    def freq(self) -> VersionControlArray:
+        """ Get view of frequency data Version Control Array and generate Fourier Transform if not existing """
         return self._freq_data
 
-    def norm_freq(self,  start_index: Optional[int] = None, end_index: Optional[int] = None, chanel : int = 0) -> NDArray[np.csingle]:
+    def norm_freq(self,  chanel: int = 0) -> NDArray[np.csingle]:
         """ Returns a copy of the normalized frequencies"""
-        if start_index is None:
-            start_index = self._freq_sel_start_ind
-        if end_index is None:
-            end_index = self._freq_sel_end_ind
 
-        return self.freq(start_index=start_index, end_index=end_index)[:self._freq_data.shape[0]//2, chanel] * 2.0 / self._freq_data.shape[0]
+        return self.freq[:self._freq_data.shape[0]//2, chanel] * 2.0 / self.N
 
     @property
     def freq_x(self) -> NDArray[np.float32]:
