@@ -25,6 +25,8 @@ class DataView:
     def freq_change_callback(self, data : AudioData, index_start : int, index_end : int) -> None:
         pass
 
+    def time_change_callback(self, index_start: int, index_end: int) -> None:
+        pass
 
 class FigureDataView(DataView):
     """ Data Viewer based on pyplot's FigureCanvasTkAgg """
@@ -184,6 +186,16 @@ class BarFigureDataView(FigureDataView):
             b.set_height(y[j])
 
 
+def x_data_time(data: AudioData) -> NDArray[np.float32]:
+    """ return time x grid"""
+    return data.time_x
+
+
+def y_data_time(data: AudioData) -> NDArray[np.float32]:
+    """ return time """
+    return data.time.view()
+
+
 def x_data_freq(data: AudioData) -> NDArray[np.float32]:
     """ return frequency x grid"""
     return data.freq_x
@@ -277,6 +289,9 @@ class EqualizerFigureDataView(LineFigureDataView):
         self.ax2.set_xlim((data.freq_x[index_start] - self.x_span, data.freq_x[index_end] + self.x_span))
         self.set_data()
 
+    def time_change_callback(self, index_start: int, index_end: int) -> None:
+        self.set_data()
+
     def _subfigure_clicked(self, event):
         """ click on zoomed window"""
         pass
@@ -301,4 +316,17 @@ class EqualizerFigureDataView(LineFigureDataView):
         """ Mouse click callback"""
         if self.command_manager is None:
             raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
-        self.command_manager.call("equ_clicked", event, self)
+        self.command_manager.call("equ_clicked", event)
+
+
+class TimeLineFigureDataView(LineFigureDataView):
+    def time_change_callback(self, index_start: int, index_end: int):
+        """ Changes the current window interval """
+        self.set_selection_window((index_start / self._data.fs, index_end / self._data.fs))
+
+    def _figure_clicked(self, event):
+        """ Mouse click callback"""
+        if self.command_manager is None:
+            raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
+        self.command_manager.call("timeline_clicked", event)
+
