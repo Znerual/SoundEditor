@@ -153,6 +153,14 @@ class AudioData:
         return k_dom_ind
 
     @property
+    def start_index(self) -> int:
+        return self._freq_sel_start_ind
+
+    @property
+    def end_index(self) -> int:
+        return self._freq_sel_end_ind
+
+    @property
     def time(self) -> VersionControlArray:
         """ Get time data Version Control Array """
         return self._time_data
