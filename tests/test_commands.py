@@ -1,10 +1,12 @@
+import copy
+
 import pytest
 import numpy as np
 
 from numpy.typing import NDArray
 from typing import Any
 
-from SoundEditor.Commands import SetFreq, CommandManager
+from SoundEditor.Commands import SetFreq, CommandManager, SetTimeFrame
 from SoundEditor.DataView import DataView
 from SoundEditor.AudioData import AudioData, VersionControlException
 
@@ -40,6 +42,95 @@ def test_set_freq():
     assert ad.freq[1, 0] == 3 + 4j
     with pytest.raises(VersionControlException):
         com2.redo()
+
+
+def test_settimeframe():
+    ad = AudioData.from_file("test.wav")
+    ad.ft(0, 10)
+    assert ad.N == 10
+    com = SetTimeFrame(20,40, ad)
+    com.do()
+    assert ad.N == 20
+
+
+def test_undo_settimeframe():
+    ad = AudioData.from_file("test.wav")
+    ad.ft(0, 10)
+    freq = copy.deepcopy(ad.freq)
+    com = SetTimeFrame(20, 40, ad)
+    com.do()
+    assert ad.N == 20
+    com.undo()
+    assert ad.N == 10
+    with pytest.raises(VersionControlException):
+        com.undo()
+    assert np.all(freq._data == ad.freq._data)
+    assert freq._history == ad.freq._history
+    assert freq._redo == ad.freq._redo
+
+def test_redo_settimeframe():
+    ad = AudioData.from_file("test.wav")
+    ad.ft(0, 10)
+    com = SetTimeFrame(20, 40, ad)
+    com.do()
+    freq = copy.deepcopy(ad.freq)
+    assert ad.N == 20
+    com.undo()
+    assert ad.N == 10
+    com.redo()
+    assert ad.N == 20
+    for i in range(freq.shape[0]):
+        assert freq[i,0] == ad.freq[i,0]
+
+    assert np.all(freq._data == ad.freq._data)
+    assert freq._history == ad.freq._history
+    assert freq._redo == ad.freq._redo
+
+def test_settimeframe_stack():
+    ad = AudioData.from_file("test.wav")
+    ad.ft(0, 10)
+    freq0 = copy.deepcopy(ad.freq)
+    com1 = SetTimeFrame(20, 40, ad)
+    com2 = SetTimeFrame(60, 100, ad)
+    com3 = SetTimeFrame(200, 300, ad)
+    com1.do()
+    freq1 = copy.deepcopy(ad.freq)
+    com2.do()
+    freq2 = copy.deepcopy(ad.freq)
+    com3.do()
+    freq3 = copy.deepcopy(ad.freq)
+    com3.undo()
+    assert np.all(freq2._data == ad.freq._data)
+    assert freq2._history == ad.freq._history
+    assert freq2._redo == ad.freq._redo
+    com3.redo()
+    assert np.all(freq3._data == ad.freq._data)
+    assert freq3._history == ad.freq._history
+    assert freq3._redo == ad.freq._redo
+    com3.undo()
+    com2.undo()
+    assert np.all(freq1._data == ad.freq._data)
+    assert freq1._history == ad.freq._history
+    assert freq1._redo == ad.freq._redo
+    com1.undo()
+    assert np.all(freq0._data == ad.freq._data)
+    assert freq0._history == ad.freq._history
+    assert freq0._redo == ad.freq._redo
+
+
+def test_setfreq_settimeframe():
+    ad = AudioData.from_file("test.wav")
+    ad.ft(0, 32)
+    com_t = SetTimeFrame(20, 40, ad)
+    com_f = SetFreq(0,1, np.array([-10+10j]), chanel=0, target=ad)
+    com_f.do()
+    com_t.do()
+    assert ad.freq._history == []
+    with pytest.raises(VersionControlException):
+        com_f.undo()
+    com_t.undo()
+    assert len(ad.freq._history) == 1
+    com_f.undo()
 
 
 def test_command_manager():
