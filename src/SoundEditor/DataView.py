@@ -15,12 +15,14 @@ from dataclasses import dataclass
 
 from .AudioData import AudioData, VersionControlArray
 from .Commands import CommandManager, CommandException
+from .helper import bell_curve, DATA_MODE
 
 TOOLBAR_POSITION = Enum("TOOLBAR_POSITION", "NONE TOP LEFT RIGHT BOTTOM", start=-1)
 
 
 class DataViewException(Exception):
     pass
+
 
 
 @dataclass(frozen=True, eq=False)
@@ -43,7 +45,7 @@ class FigureDataView(DataView):
     def _figure_mouse_press(self, event):
         """ Mouse click callback"""
         self._mouse_press_data = MouseEventData(time=time.time(), event=event)
-        self._mouse_pos_data = (event.x, event.y)
+        
 
     def _figure_mouse_release(self, event):
         """ Mouse release callback"""
@@ -72,8 +74,10 @@ class FigureDataView(DataView):
     def _figure_mouse_moved(self, event: matplotlib.backend_bases.MouseEvent):
         """ pan if mouse is moved while holding the middle mouse button """
         if event.button == matplotlib.backend_bases.MouseButton.MIDDLE:
-            self._pan(self.canvas, self.ax.transData, self._mouse_pos_data, (event.x, event.y), (self.ax.get_xlim, self.ax.get_ylim), (self.ax.set_xlim, self.ax.set_ylim))
-            self._mouse_pos_data = (event.x, event.y)
+            self._pan(self.canvas, self.ax.transData, self._mouse_pos, (event.x, event.y), (self.ax.get_xlim, self.ax.get_ylim), (self.ax.set_xlim, self.ax.set_ylim))
+
+        self._mouse_pos = (event.x, event.y)
+        self._mouse_pos_data = (event.xdata, event.ydata)
 
     def _pan(self, canvas: FigureCanvasTkAgg,
              dataTrans: matplotlib.axes.Axes.transData,
@@ -169,6 +173,7 @@ class FigureDataView(DataView):
 
         self.command_manager = command_manager
         self._mouse_press_data: Optional[MouseEventData] = None
+        self._mouse_pos: Tuple[float, float] = (-1.0, -1.0)
         self._mouse_pos_data: Tuple[float, float] = (-1.0, -1.0)
         if selection_window[0] != -1 and selection_window[1] != -1:
             self.selection_line = self.ax.axvline(x=selection_window[0])
@@ -181,7 +186,7 @@ class FigureDataView(DataView):
         self.canvas.mpl_connect("button_release_event", self._figure_mouse_release)
         self.canvas.mpl_connect("scroll_event", self._figure_scrolled)
         self.canvas.mpl_connect("motion_notify_event", self._figure_mouse_moved)
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        self.canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=1)
 
         if position == tk.TOP:
             self.frame.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
@@ -318,7 +323,119 @@ def y_data_freq_imag(data: AudioData) -> NDArray[np.float32]:
     return np.imag(data.norm_freq())
 
 
-class EqualizerZoomFigureDataView(LineFigureDataView):
+class EqualizerFigureDataView(LineFigureDataView):
+    """ Equalizer plot """
+    def __init__(self, *args,toolbar=False, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # settings for gaussian curve
+        self.bell, = self.ax.plot([self._x[0](self._data)[0]], [self._y[0](self._data)[0]], 'o', ms=4, alpha=0.8, color='red', visible=False)
+        self.bell_halve_width = 2
+        self.show_bell = False
+
+        # data mode
+        self.data_mode = DATA_MODE.REPLACE
+        # custom toolbar
+        if toolbar:
+            self.toolbar_frame = tk.Frame(self.frame)
+            self.toolbar_frame.pack(side=tk.TOP, fill=tk.X)
+            self.button_add = tk.Button(self.toolbar_frame, text="Add", command=self._add_button_clicked)
+            self.button_subtract = tk.Button(self.toolbar_frame, text="Subtract", command=self._subtract_button_clicked)
+            self.button_replace = tk.Button(self.toolbar_frame, text="Replace", state=tk.DISABLED, command=self._replace_button_clicked)
+            self.button_add.pack(side=tk.LEFT)
+            self.button_subtract.pack(side=tk.LEFT)
+            self.button_replace.pack(side=tk.LEFT)
+
+    def _enable_all_mode_buttons(self):
+        self.button_add["state"] = tk.NORMAL
+        self.button_subtract["state"] = tk.NORMAL
+        self.button_replace["state"] = tk.NORMAL
+
+    def _add_button_clicked(self):
+        self._enable_all_mode_buttons()
+        self.button_add["state"] = tk.DISABLED
+        self.data_mode = DATA_MODE.ADD
+
+    def _subtract_button_clicked(self):
+        self._enable_all_mode_buttons()
+        self.button_subtract["state"] = tk.DISABLED
+        self.data_mode = DATA_MODE.SUBTRACT
+
+    def _replace_button_clicked(self):
+        self._enable_all_mode_buttons()
+        self.button_replace["state"] = tk.DISABLED
+        self.data_mode = DATA_MODE.REPLACE
+
+    def key_press_callback(self, event: tk.Event):
+        """ key press event """
+        if event.char == "g":
+            self.show_bell = not self.show_bell
+
+        if self.show_bell:
+            self._show_gauss()
+        else:
+            self._hide_gauss()
+
+    def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
+        self.set_data()
+
+    def time_change_callback(self, index_start: int, index_end: int) -> None:
+        self.set_data()
+
+    def _figure_clicked(self, event):
+        """ Clicked on the figure """
+        if self.command_manager is None:
+            raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
+
+        payload = {"data_mode" :self.data_mode}
+        if self.show_bell:
+            payload.update({"bell_halve_width": self.bell_halve_width})
+        else:
+            payload.update({"bell_halve_width": 0})
+
+        self.command_manager.call("equ_clicked", event, payload=payload)
+
+    def _figure_mouse_moved(self, event: matplotlib.backend_bases.MouseEvent):
+        super()._figure_mouse_moved(event)
+        if self.show_bell:
+            self._show_gauss()
+
+    def _hide_gauss(self):
+        """ hide gaussian curve """
+        self.bell.set_visible(False)
+        self.canvas.draw()
+
+    def _show_gauss(self):
+        """ Show the gaussian curve that will be added on click"""
+        if self._mouse_pos_data[0] is None or self._mouse_pos_data[1] is None:
+            return
+
+        if self.bell_halve_width == 0:
+            self.bell.set_data([self._mouse_pos_data[0], self._mouse_pos_data[0]], [0, self._mouse_pos_data[1]])
+            self.bell.set_visible(True)
+            self.canvas.draw()
+        else:
+            d_x = self._x[0](self._data)[1] - self._x[0](self._data)[0]
+            curve = bell_curve(halve_width=self.bell_halve_width) * self._mouse_pos_data[1]
+            xx = np.arange(-self.bell_halve_width, self.bell_halve_width + 1, 1, dtype="float") * d_x + self._mouse_pos_data[0]
+
+            self.bell.set_data(xx, curve)
+            self.bell.set_visible(True)
+            self.canvas.draw()
+
+    def _figure_scrolled(self, event):
+        """ scrolled on zoom window """
+        if not self.show_bell:
+            super()._figure_scrolled(event)
+        else:
+            if event.button == "up":
+                self.bell_halve_width += 1
+            else:
+                self.bell_halve_width -= 1
+            self._show_gauss()
+
+
+class EqualizerZoomFigureDataView(EqualizerFigureDataView):
     """ Equalizer plot """
     def __init__(self, x_span, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -329,35 +446,9 @@ class EqualizerZoomFigureDataView(LineFigureDataView):
         self.ax.set_xlim((data.freq_x[index_start] - self.x_span, data.freq_x[index_end] + self.x_span))
         self.set_data()
 
-    def time_change_callback(self, index_start: int, index_end: int) -> None:
-        self.set_data()
-
-    def _figure_clicked(self, event):
-        """ Clicked on the figure """
-        if self.command_manager is None:
-            raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
-
-        self.command_manager.call("equ_clicked", event)
-
-
-class EqualizerFigureDataView(LineFigureDataView):
-    """ Equalizer plot """
-
-    def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
-        self.set_data()
-
-    def time_change_callback(self, index_start: int, index_end: int) -> None:
-        self.set_data()
-
-    def _figure_clicked(self, event):
-        """ Clicked on the figure """
-        if self.command_manager is None:
-            raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
-
-        self.command_manager.call("equ_clicked", event)
-
 
 class TimeLineFigureDataView(LineFigureDataView):
+    # TODO: Add downsampler
     def time_change_callback(self, index_start: int, index_end: int):
         """ Changes the current window interval """
         self.set_selection_window((index_start / self._data.fs, index_end / self._data.fs))
