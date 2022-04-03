@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import tkinter
 import copy
+import warnings
+
 from abc import abstractmethod, ABCMeta
 from typing import List, Callable, Optional, Dict, Any, Union, Tuple
 
@@ -9,6 +11,7 @@ import matplotlib.backend_bases
 import numpy as np
 
 from .AudioData import AudioData, VersionControlException
+from .helper import bell_curve, DATA_MODE
 
 from numpy.typing import NDArray
 
@@ -49,14 +52,14 @@ class CommandManager:
 
         self._callbacks[name] = (callers, callback)
 
-    def call(self, name : str, event : Union[matplotlib.backend_bases.MouseEvent, tkinter.Event]) -> None:
+    def call(self, name : str, event : Union[matplotlib.backend_bases.MouseEvent, tkinter.Event], payload: Dict[str: Any] = {}) -> None:
         """ call function used to trigger the callbacks"""
         if not name in self._callbacks:
             raise CommandException(f"No callback registered under the name {name}")
 
         callers, callback = self._callbacks[name]
 
-        callback(self, event, callers)
+        callback(self, event, callers, payload=payload)
 
     @property
     def data(self) -> AudioData:
@@ -132,7 +135,7 @@ class SetTimeFrame(Command):
     def do(self) -> None:
         """ changes the current time frame and does the fourier transformation """
         self.redo_freq = None
-        self.history_freq = (self.target._freq_sel_start_ind, self.target._freq_sel_end_ind, copy.deepcopy(self.target.freq))
+        self.history_freq = (self.target.start_index, self.target.end_index, copy.deepcopy(self.target.freq))
         self.target.ft(self.start_index, self.end_index)
         for listener in self.listener:
             listener.time_change_callback(self.start_index, self.end_index)
@@ -145,37 +148,72 @@ class SetTimeFrame(Command):
         self.target._freq_sel_start_ind, self.target._freq_sel_end_ind, self.target._freq_data = self.history_freq
         self.history_freq = None
         for listener in self.listener:
-            listener.time_change_callback(self.target._freq_sel_start_ind, self.target._freq_sel_end_ind)
+            listener.time_change_callback(self.target.start_index, self.target.end_index)
 
     def redo(self) -> None:
         """ redos the change of time frame """
         if self.redo_freq is None:
             VersionControlException("Can't redo command because of empty history.")
-        self.history_freq = (self.target._freq_sel_start_ind, self.target._freq_sel_end_ind,copy.deepcopy(self.target.freq))
+        self.history_freq = (self.target.start_index, self.end_index,copy.deepcopy(self.target.freq))
         self.target._freq_sel_start_ind, self.target._freq_sel_end_ind, self.target._freq_data = self.redo_freq
         self.redo_freq = None
         for listener in self.listener:
             listener.time_change_callback(self.start_index, self.end_index)
 
 
-def equalizer_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView]):
+def equalizer_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView], payload: Dict[str, Any]):
     """ Click callback for equalizer plot"""
-    print(event)
+    # catch clicks outside the figure
+    if event.xdata is None:
+        return
+
+    # get x grid
     x_data = int(round(event.xdata))
     delta_x = command_manager.data.freq_x[1] - command_manager.data.freq_x[0]
-    #print(f"d_X: {delta_x}, x data: {x_data}, freq_x: {command_manager.data.freq_x}")
+
+    # find index where event matches grid
     f_ind = np.where((command_manager.data.freq_x == x_data) | ((x_data - delta_x <= command_manager.data.freq_x) & (command_manager.data.freq_x <= x_data + delta_x)))[0]
 
+    # reduce to one point if mouse between two events
     if f_ind.shape == 3:
         ind = f_ind[1]
     else:
         ind = f_ind[0]
 
-    command = SetFreq(ind, ind+3, event.ydata * command_manager.data.N / 2, chanel=0, target=command_manager.data, listener=callers)
+    # change data and catch missing payload
+    if not "bell_halve_width" in payload:
+        warnings.warn("Missing bell_halve_width parameter in equalizer_callback's payload", RuntimeWarning)
+        payload["bell_halve_width"] = 0
+
+    if not "data_mode" in payload:
+        warnings.warn("Missing data_mode parameter in equalizer_callback's payload", RuntimeWarning)
+        payload["data_mode"] = DATA_MODE.REPLACE
+
+    ind_start = ind - payload["bell_halve_width"]#
+    ind_end = ind + payload["bell_halve_width"] + 1
+
+    if payload["data_mode"] == DATA_MODE.REPLACE:
+        curve = bell_curve(halve_width=payload["bell_halve_width"]) * event.ydata * command_manager.data.N / 2
+    elif payload["data_mode"] == DATA_MODE.ADD:
+        curve = command_manager.data.freq[ind_start:ind_end, 0] + bell_curve(halve_width=payload["bell_halve_width"]) * event.ydata * command_manager.data.N / 2
+    elif payload["data_mode"] == DATA_MODE.SUBTRACT:
+        curve = command_manager.data.freq[ind_start:ind_end, 0] - bell_curve(halve_width=payload["bell_halve_width"]) * event.ydata * command_manager.data.N / 2
+    else:
+        raise RuntimeError("Invalid choice of data_mode in the equalizer_callback payload")
+
+    command = SetFreq(ind_start, ind_end, curve , chanel=0, target=command_manager.data, listener=callers)
     command_manager.do(command)
 
 
-def timeline_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView]):
+def key_pressed_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView], payload: Dict[str, Any]):
+    """ Key down callback"""
+    for caller in callers:
+        if "key_press_callback" in dir(caller):
+            caller.key_press_callback(event)
+
+
+
+def timeline_callback(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView], payload: [Dict, Any]):
     """ Clicked on timeline plot """
     index_time = int(event.xdata * command_manager.data.fs)
     old_start = command_manager.data.start_index
