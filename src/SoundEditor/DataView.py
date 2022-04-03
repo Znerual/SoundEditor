@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import numpy as np
+import tkinter as tk
+import matplotlib.pyplot as plt
+
+import time
+import matplotlib
+
 from numpy.typing import NDArray
 from typing import Tuple, Union, Optional, List, Any, Callable
 from enum import Enum
-
-import numpy as np
-import tkinter as tk
-
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from dataclasses import dataclass
 
 from .AudioData import AudioData, VersionControlArray
 from .Commands import CommandManager, CommandException
@@ -18,6 +21,12 @@ TOOLBAR_POSITION = Enum("TOOLBAR_POSITION", "NONE TOP LEFT RIGHT BOTTOM", start=
 
 class DataViewException(Exception):
     pass
+
+
+@dataclass(frozen=True, eq=False)
+class MouseEventData:
+    time: float
+    event: matplotlib.backend_bases.MouseEvent
 
 
 class DataView:
@@ -31,9 +40,118 @@ class DataView:
 class FigureDataView(DataView):
     """ Data Viewer based on pyplot's FigureCanvasTkAgg """
 
-    def _figure_clicked(self, event):
+    def _figure_mouse_press(self, event):
         """ Mouse click callback"""
+        self._mouse_press_data = MouseEventData(time=time.time(), event=event)
+        self._mouse_pos_data = (event.x, event.y)
+
+    def _figure_mouse_release(self, event):
+        """ Mouse release callback"""
+        mouse_event: MouseEventData = MouseEventData(time=time.time(), event=event)
+
+        if self._mouse_click(self._mouse_press_data, mouse_event):
+            self._figure_clicked(event)
+
+
+    def _figure_clicked(self, event):
+        """ Mouse click callback """
         pass
+
+    def _mouse_click(self, mouse_press_data: MouseEventData, mouse_release_data: MouseEventData):
+        """ Checks whether a mouse click was a click or a drag """
+        start_time, start_event = mouse_press_data.time, mouse_press_data.event
+        end_time, end_event = mouse_release_data.time, mouse_release_data.event
+        delta_time = end_time - start_time
+        delta_pos = np.linalg.norm(np.array([end_event.x, end_event.y]) - np.array([start_event.x, start_event.y]), ord=2)
+
+        if delta_time <= 0.1 or (delta_time <= 0.25 and delta_pos <= 5):
+            return True
+
+        return False
+
+    def _figure_mouse_moved(self, event: matplotlib.backend_bases.MouseEvent):
+        """ pan if mouse is moved while holding the middle mouse button """
+        if event.button == matplotlib.backend_bases.MouseButton.MIDDLE:
+            self._pan(self.canvas, self.ax.transData, self._mouse_pos_data, (event.x, event.y), (self.ax.get_xlim, self.ax.get_ylim), (self.ax.set_xlim, self.ax.set_ylim))
+            self._mouse_pos_data = (event.x, event.y)
+
+    def _pan(self, canvas: FigureCanvasTkAgg,
+             dataTrans: matplotlib.axes.Axes.transData,
+             old_mouse_position: Tuple[float, float],
+             current_mouse_position: Tuple[float, float],
+             get_lim: Tuple[Callable[[FigureDataView], Any], Callable[[FigureDataView], Any]],
+             set_lim: Tuple[Callable[[int, int], None], Callable[[int, int], None]]):
+        """ pan the selection around """
+        x_start, y_start = old_mouse_position
+        x_end, y_end = current_mouse_position
+
+        # get axis limits
+        cur_lim1_data = np.array(get_lim[0]())
+        cur_lim2_data = np.array(get_lim[1]())
+
+        # transform to display coordinates
+        cur_lim1 = np.empty((2,), dtype=int)
+        cur_lim2 = np.empty((2,), dtype=int)
+        cur_lim1[0], cur_lim2[0] = dataTrans.transform((cur_lim1_data[0], cur_lim2_data[0]))
+        cur_lim1[1], cur_lim2[1] = dataTrans.transform((cur_lim1_data[1], cur_lim2_data[1]))
+
+        # calculate scaling factor
+        pix2x = (cur_lim1_data[1] - cur_lim1_data[0]) / (cur_lim1[1] - cur_lim1[0])
+        pix2y = (cur_lim2_data[1] - cur_lim2_data[0]) / (cur_lim2[1] - cur_lim2[0])
+
+        # set new limits
+        set_lim[0](cur_lim1_data - (x_end - x_start) * pix2x)
+        set_lim[1](cur_lim2_data - (y_end - y_start) * pix2y)
+
+        canvas.draw()
+
+    def zoom_1d(self, canvas: FigureCanvasTkAgg,
+                event: matplotlib.backend_bases.MouseEvent, get_lim: Callable[[FigureDataView], Any],
+                set_lim: Callable[[int, int], None], pos: float, base_scale: float = 1.05) -> None:
+        """ zoom over one axis """
+        cur_lim = get_lim()
+        cur_range = (cur_lim[1] - cur_lim[0]) * 0.5
+        midpoint = (cur_lim[1] + cur_lim[0]) * 0.5
+        if event.button == "up":
+            scale_factor = 1 / base_scale
+        else:
+            scale_factor = base_scale
+
+        set_lim([midpoint - cur_range * scale_factor, midpoint + cur_range * scale_factor])
+        canvas.draw()
+
+    def zoom_2d(self, canvas: FigureCanvasTkAgg,
+                event: matplotlib.backend_bases.MouseEvent,
+                get_lim: Tuple[Callable[[FigureDataView], Any], Callable[[FigureDataView], Any]],
+                set_lim: Tuple[Callable[[int, int], None], Callable[[int, int], None]], pos: Tuple[float, float],
+                base_scale: float = 1.1) -> None:
+        """ zoom over both axes """
+        cur_lim1 = get_lim[0]()
+        cur_lim2 = get_lim[1]()
+        cur_range1 = (cur_lim1[1] - cur_lim1[0]) * 0.5
+        cur_range2 = (cur_lim2[1] - cur_lim2[0]) * 0.5
+        cur_midpoint1 = (cur_lim1[1] + cur_lim1[0]) * 0.5
+        cur_midpoint2 = (cur_lim2[1] + cur_lim2[0]) * 0.5
+        if event.button == "up":
+            scale_factor = 1 / base_scale
+        else:
+            scale_factor = base_scale
+
+        set_lim[0]([cur_midpoint1 + (pos[0] - cur_midpoint1) / 10 - cur_range1 * scale_factor, cur_midpoint1 + (pos[0] - cur_midpoint1) / 10 + cur_range1 * scale_factor])
+        set_lim[1]([cur_midpoint2 + (pos[1] - cur_midpoint2) / 10 - cur_range2 * scale_factor, cur_midpoint2 + (pos[1] - cur_midpoint2) / 10 + cur_range2 * scale_factor])
+
+        canvas.draw()
+
+    def _figure_scrolled(self, event):
+        """ scrolled on zoom window """
+        x, y = self.ax.transAxes.inverted().transform((event.x, event.y))
+
+        if x <= 0 < y:
+            self.zoom_1d(self.canvas, event, self.ax.get_ylim, self.ax.set_ylim, event.ydata)
+        elif 0 >= y < x:
+            self.zoom_1d(self.canvas, event, self.ax.get_xlim, self.ax.set_xlim, event.xdata)
+        else:
+            self.zoom_2d(self.canvas, event, (self.ax.get_xlim, self.ax.get_ylim), (self.ax.set_xlim, self.ax.set_ylim), (event.xdata, event.ydata))
 
     def __init__(self, root: tk.Tk,
                  position: Union[tk.TOP, tk.BOTTOM, tk.LEFT, tk.RIGHT] = tk.TOP,
@@ -49,8 +167,10 @@ class FigureDataView(DataView):
         self.frame = tk.Frame(master=self.root)
         self.figure = plt.Figure(figsize=figsize, dpi=dpi)
         self.ax = self.figure.add_subplot(111)
-        self.command_manager = command_manager
 
+        self.command_manager = command_manager
+        self._mouse_press_data: Optional[MouseEventData] = None
+        self._mouse_pos_data: Tuple[float, float] = (-1.0, -1.0)
         if selection_window[0] != -1 and selection_window[1] != -1:
             self.selection_line = self.ax.axvline(x=selection_window[0])
             self.selection_window = self.ax.axvspan(selection_window[0], selection_window[1] - selection_window[0], alpha=0.5)
@@ -58,10 +178,15 @@ class FigureDataView(DataView):
         # add plots
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
-        self.canvas.mpl_connect("button_press_event", self._figure_clicked)
-
+        self.canvas.mpl_connect("button_press_event", self._figure_mouse_press)
+        self.canvas.mpl_connect("button_release_event", self._figure_mouse_release)
+        self.canvas.mpl_connect("scroll_event", self._figure_scrolled)
+        self.canvas.mpl_connect("motion_notify_event", self._figure_mouse_moved)
+        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         # add toolbar and pack everything to the frame
+        """
         self.toolbar = NavigationToolbar2Tk(self.canvas, self.frame, pack_toolbar=False)
+        self.toolbar.pan()
         self.toolbar.update()
 
         if toolbar_pos == TOOLBAR_POSITION.TOP:
@@ -80,7 +205,7 @@ class FigureDataView(DataView):
             self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         else:
             raise DataViewException(f"Unexpected toolbar position: {toolbar_pos}")
-
+        """
         if position == tk.TOP:
             self.frame.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
         elif position == tk.BOTTOM:
@@ -232,7 +357,7 @@ class EqualizerFigureDataView(LineFigureDataView):
         self.ax2.set_xlim((200,300))
         self.x_span = 100
         self.canvas2 = FigureCanvasTkAgg(self.figure2, master=self.frame2)
-
+        self._mouse_press_data2: Optional[MouseEventData] = None
         xx = [x_tmp(self._data) for x_tmp in self._x]
         yy = [y_tmp(self._data) for y_tmp in self._y]
 
@@ -240,9 +365,11 @@ class EqualizerFigureDataView(LineFigureDataView):
             setattr(self, f"line2_{i}", self.ax2.plot(x_tmp, y_tmp)[0])
 
         self.canvas2.draw()
-        self.canvas2.mpl_connect("button_press_event", self._subfigure_clicked)
+        self.canvas2.mpl_connect("button_press_event", self._subfigure_mouse_pressed)
+        self.canvas2.mpl_connect("button_release_event", self._subfigure_mouse_released)
         self.canvas2.mpl_connect('scroll_event', self._subfigure_scrolled)
         self.toolbar2 = NavigationToolbar2Tk(self.canvas2, self.frame2, pack_toolbar=False)
+        self.toolbar2.pan()
         self.toolbar2.update()
         if toolbar_pos2 == TOOLBAR_POSITION.TOP:
             self.toolbar2.pack(side=tk.TOP, fill=tk.X)
@@ -292,30 +419,35 @@ class EqualizerFigureDataView(LineFigureDataView):
     def time_change_callback(self, index_start: int, index_end: int) -> None:
         self.set_data()
 
-    def _subfigure_clicked(self, event):
+    def _subfigure_mouse_pressed(self, event):
         """ click on zoomed window"""
-        pass
+        self._mouse_press_data2 = MouseEventData(time=time.time(), event=event)
+
+    def _subfigure_mouse_released(self, event):
+        if self.command_manager is None:
+            raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
+
+        mouse_event: MouseEventData = MouseEventData(time=time.time(), event=event)
+
+        if self._mouse_click(self._mouse_press_data2, mouse_event):
+            self.command_manager.call("equ_clicked", event)
 
     def _subfigure_scrolled(self, event):
         """ scrolled on zoom window """
-        #TODO check if mouse over axis and change x or y limits
-        print(event)
-        x_lim = self.ax2.get_xlim()
-        if event.button == "up":
+        x, y = self.ax2.transAxes.inverted().transform((event.x, event.y))
 
-            self.x_span += 10
-            self.ax2.set_xlim(x_lim[0] - 10, x_lim[1] + 10)
+        if x <= 0 < y:
+            self.zoom_1d(self.canvas2, event, self.ax2.get_ylim, self.ax2.set_ylim, event.ydata)
+        elif 0 >= y < x:
+            self.zoom_1d(self.canvas2, event, self.ax2.get_xlim, self.ax2.set_xlim, event.xdata)
         else:
-            if self.x_span > 10:
-                self.x_span -= 10
-                self.ax2.set_xlim(x_lim[0] + 10, x_lim[1] - 10)
-
-        self.canvas2.draw()
+            self.zoom_2d(self.canvas2, event, (self.ax2.get_xlim, self.ax2.get_ylim), (self.ax2.set_xlim, self.ax2.set_ylim), (event.xdata, event.ydata))
 
     def _figure_clicked(self, event):
-        """ Mouse click callback"""
+        """ Clicked on the figure """
         if self.command_manager is None:
             raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
+
         self.command_manager.call("equ_clicked", event)
 
 
