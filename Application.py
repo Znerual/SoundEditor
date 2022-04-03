@@ -2,7 +2,7 @@ import tkinter as tk
 import numpy as np
 
 from SoundEditor.AudioData import AudioData, VersionControlArray
-from SoundEditor.Commands import CommandManager, SetFreq, equalizer_callback, timeline_callback
+from SoundEditor.Commands import CommandManager, SetFreq, equalizer_callback, timeline_callback, key_pressed_callback
 from SoundEditor.DataView import TimeLineFigureDataView,  BarFigureDataView,  EqualizerFigureDataView, TOOLBAR_POSITION, EqualizerZoomFigureDataView
 from SoundEditor.DataView import x_data_freq, y_data_freq_imag, y_data_freq_real, y_data_freq_abs, x_data_time, y_data_time
 
@@ -12,7 +12,7 @@ def main():
     """ run the application"""
     root = tk.Tk()
     root2 = tk.Toplevel(root)
-    root.bind("<Key>", lambda x : print(x, type(x)))
+
     frequency_frame = tk.Frame(master=root)
     time_frame = tk.Frame(master=root)
 
@@ -31,7 +31,8 @@ def main():
                                      x=[x_data_freq, x_data_freq, x_data_freq],
                                      y=[y_data_freq_abs, y_data_freq_real, y_data_freq_imag],
                                      command_manager=manager,
-                                     position=tk.LEFT)
+                                     position=tk.LEFT,
+                                     toolbar=True)
     equ_zoom_dv = EqualizerZoomFigureDataView(x_span=200,
                                               root=root2,
                                               position=tk.TOP,
@@ -41,6 +42,9 @@ def main():
                                               command_manager=manager)
 
     manager.register_callback("equ_clicked", equalizer_callback, [equ_dv, equ_zoom_dv])
+    manager.register_callback("key_pressed", key_pressed_callback, [equ_dv, equ_zoom_dv])
+
+    root.bind("<Key>", lambda event: manager.call("key_pressed", event))
 
     time_dv = TimeLineFigureDataView(root=time_frame,
                                      data=audio_data,
