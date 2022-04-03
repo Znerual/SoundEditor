@@ -300,7 +300,7 @@ def x_data_time(data: AudioData) -> NDArray[np.float32]:
 
 def y_data_time(data: AudioData) -> NDArray[np.float32]:
     """ return time """
-    return data.time.view()
+    return data.time[:,0]
 
 
 def x_data_freq(data: AudioData) -> NDArray[np.float32]:
@@ -453,9 +453,20 @@ class TimeLineFigureDataView(LineFigureDataView):
         """ Changes the current window interval """
         self.set_selection_window((index_start / self._data.fs, index_end / self._data.fs))
 
+
+
+        xx = [x_tmp(self._data) for x_tmp in self._x]
+        yy = [y_tmp(self._data) for y_tmp in self._y]
+
+        print(f"x {xx[0].shape} y {yy[0].shape}")
+        self.set_data()
+
     def _figure_clicked(self, event):
         """ Mouse click callback"""
         if self.command_manager is None:
             raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
         self.command_manager.call("timeline_clicked", event)
+
+    def key_press_callback(self, event):
+        """ key press callback """
 

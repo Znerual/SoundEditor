@@ -174,11 +174,18 @@ class AudioData:
         return self._freq_sel_end_ind - self._freq_sel_start_ind
 
     def ft(self, start_index: int, end_index: Optional[int] = None):
+        # TODO: convolute with decaying funciton to avoid boundary effects
         """ Fourier transforms the given audio segment """
         if not (start_index == self._freq_sel_start_ind and end_index == self._freq_sel_end_ind):
             self._freq_sel_start_ind = start_index
             self._freq_sel_end_ind = self._time_data.shape[0] if end_index is None else end_index
             self._four_trans_seq()
+
+    def ift(self):
+        """ Inverse Fourier transform of the frequency signal back to audio signal """
+        from scipy.fft import ifft
+        self._time_data[self.start_index:self.end_index, 0] = np.real(ifft(self.freq[:,0]))
+        self._time_data[self.start_index:self.end_index, 1] = np.real(ifft(self.freq[:,1]))
 
     @property
     def freq(self) -> VersionControlArray:

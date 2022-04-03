@@ -46,6 +46,84 @@ def test_four_trans_seq():
         assert (-2 / 10 * np.real(ad._freq_data[3, 0])) <= 1e-6
 
 
+def test_ft():
+    ad = AudioData.from_file("test.wav")
+    ad._time_data[0:10, 0] = np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10))
+    ad.ft(0, 10)
+    assert abs(-2 / 10 * np.imag(ad._freq_data[0, 0])) <= 1e-6
+    assert (-2 / 10 * np.imag(ad._freq_data[1, 0])) == 1
+    for i in range(2, 10):
+        assert (-2 / 10 * np.imag(ad._freq_data[i, 0])) <= 1e-6
+    for i in range(10):
+        assert (-2 / 10 * np.real(ad._freq_data[3, 0])) <= 1e-6
+
+
+def test_ift():
+    ad = AudioData.from_file("test.wav")
+    ad._time_data[0:10, 0] = np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10))
+    ad.ft(0, 10)
+    ad.ift()
+    assert np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+
+def test_ift_undo():
+    ad = AudioData.from_file("test.wav")
+    ad._time_data[0:40,0] = 0
+    ad._time_data[0:10, 0] = np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10))
+    assert len(ad.time.history) == 2
+    ad.ft(0, 10)
+    assert len(ad.time.history) == 2
+    ad.freq[3:5,0] = 1+2j
+    assert len(ad.time.history) == 2
+    ad.ift()
+    assert len(ad.time.history) == 4
+    assert not np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+                ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+    ad.freq.undo()
+    ad.ift()
+    assert np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+            ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+    ad.time.undo()
+    ad.time.undo()
+    assert not np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+            ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+    ad.time.undo()
+    ad.time.undo()
+    assert np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+            ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+
+def test_ift_undo2():
+    ad = AudioData.from_file("test.wav")
+    ad._time_data[0:40,0] = 0
+    ad._time_data[0:10, 0] = np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10))
+    assert len(ad.time.history) == 2
+    ad.ft(0, 10)
+    assert len(ad.time.history) == 2
+    ad.freq[3:5,0] = 1+2j
+    assert len(ad.time.history) == 2
+    ad.ift()
+    assert len(ad.time.history) == 4
+    assert not np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+                ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+    ad.freq_undo()
+    ad.ift()
+    assert np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+            ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+    ad.time_undo()
+    ad.time_undo()
+    assert not np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+            ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+    ad.time_undo()
+    ad.time_undo()
+    assert np.all((ad._time_data[0:10, 0] <= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) + 1e-4) & (
+            ad._time_data[0:10, 0] >= np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10)) - 1e-4))
+
+
 def test_find_peaks():
     ad = AudioData.from_file("test.wav")
     freq = ad.freq_no_undo(0, 56)
