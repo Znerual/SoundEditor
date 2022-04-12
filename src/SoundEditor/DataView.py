@@ -24,6 +24,65 @@ class DataViewException(Exception):
     pass
 
 
+def x_data_time(data: AudioData) -> NDArray[np.float32]:
+    """ return time x grid"""
+    return data.time_x
+
+
+def y_data_time(data: AudioData) -> NDArray[np.float32]:
+    """ return time """
+    return data.time[:,0]
+
+
+def x_window_time(data: AudioData) -> NDArray[np.float32]:
+    """ return x data of selected time window """
+    return data.time_x[data.start_index:data.end_index]
+
+
+def x_rel_window_time(data: AudioData) -> NDArray[np.float32]:
+    """ return x data relative to current selected window"""
+    return data.time_x[0:data.N]
+
+
+def y_window_time(data: AudioData) -> NDArray[np.float32]:
+    """ return selected window of time """
+    return data.time[data.start_index:data.end_index, 0]
+
+
+def y_window_damping(data: AudioData) -> NDArray[np.float32]:
+    """ return damping of time before fourier transformation """
+    return data.damping
+
+
+def y_window_time_damped(data: AudioData) -> NDArray[np.float32]:
+    """ returns damped audio data """
+    return data.time[data.start_index:data.end_index, 0] * data.damping
+
+
+def y_window_invdamping(data: AudioData) -> NDArray[np.float32]:
+    """ returns the inverse damping """
+    return data.inv_damping
+
+
+def x_data_freq(data: AudioData) -> NDArray[np.float32]:
+    """ return frequency x grid"""
+    return data.freq_x
+
+
+def y_data_freq_abs(data: AudioData) -> NDArray[np.float32]:
+    """ return absolute value of normalized frequency"""
+    return np.abs(data.norm_freq())
+
+
+def y_data_freq_real(data: AudioData) -> NDArray[np.float32]:
+    """ returns real part of normalized frequencies """
+    return np.real(data.norm_freq())
+
+
+def y_data_freq_imag(data: AudioData) -> NDArray[np.float32]:
+    """ returns imaginary part of normalized frequencies """
+    return np.imag(data.norm_freq())
+
 
 @dataclass(frozen=True, eq=False)
 class MouseEventData:
@@ -33,11 +92,15 @@ class MouseEventData:
 
 class DataView:
     """ Base class creating container for data able to receive callbacks from commands when added as listener """
-    def freq_change_callback(self, data : AudioData, index_start : int, index_end : int) -> None:
+    def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         pass
 
-    def time_change_callback(self, index_start: int, index_end: int) -> None:
+    def time_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         pass
+
+    def play_timecode_callback(self, data: AudioData, current_frame) -> None:
+        pass
+
 
 class FigureDataView(DataView):
     """ Data Viewer based on pyplot's FigureCanvasTkAgg """
@@ -45,7 +108,6 @@ class FigureDataView(DataView):
     def _figure_mouse_press(self, event):
         """ Mouse click callback"""
         self._mouse_press_data = MouseEventData(time=time.time(), event=event)
-        
 
     def _figure_mouse_release(self, event):
         """ Mouse release callback"""
@@ -53,7 +115,6 @@ class FigureDataView(DataView):
 
         if self._mouse_click(self._mouse_press_data, mouse_event):
             self._figure_clicked(event)
-
 
     def _figure_clicked(self, event):
         """ Mouse click callback """
@@ -176,8 +237,8 @@ class FigureDataView(DataView):
         self._mouse_pos: Tuple[float, float] = (-1.0, -1.0)
         self._mouse_pos_data: Tuple[float, float] = (-1.0, -1.0)
         if selection_window[0] != -1 and selection_window[1] != -1:
-            self.selection_line = self.ax.axvline(x=selection_window[0])
-            self.selection_window = self.ax.axvspan(selection_window[0], selection_window[1] - selection_window[0], alpha=0.5)
+            self.selection_line = self.ax.axvline(x=selection_window[0], color="red")
+            self.selection_window = self.ax.axvspan(selection_window[0], selection_window[1], alpha=0.5)
 
         # add plots
         self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
@@ -199,15 +260,20 @@ class FigureDataView(DataView):
         else:
             raise DataViewException(f"Unexpected figure position: {position}")
 
-    def set_selection_window(self, selection_window : Tuple[Union[float, int], Union[float, int]]):
+    def set_selection_window(self, selection_window: Tuple[Union[float, int], Union[float, int]]):
         """ update the selection windows"""
 
-        self.selection_line.set_data([selection_window[0], selection_window[0]], [0,1])
+        self.set_selection_line(selection_window[0])
         window_points = self.selection_window.get_xy()
         window_points[:, 0] = [selection_window[0], selection_window[0],
                                selection_window[1], selection_window[1], selection_window[0]]
         self.selection_window.set_xy(window_points)
 
+        self.canvas.draw()
+
+    def set_selection_line(self, selection_line: Union[float,int]):
+        """ moved the selection line to the specified x position"""
+        self.selection_line.set_data([selection_line, selection_line], [0, 1])
         self.canvas.draw()
 
 
@@ -230,7 +296,7 @@ class LineFigureDataView(FigureDataView):
         xx = [x_tmp(self._data) for x_tmp in x]
         yy = [y_tmp(self._data) for y_tmp in y]
 
-        for i, (x_tmp, y_tmp) in enumerate(zip(xx,yy)):
+        for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
             setattr(self, f"line_{i}", self.ax.plot(x_tmp, y_tmp, label=label, color=color, alpha=alpha)[0])
 
     def set_data(self):
@@ -239,7 +305,7 @@ class LineFigureDataView(FigureDataView):
         xx = [x(self._data) for x in self._x]
         yy = [y(self._data) for y in self._y]
 
-        for i, (x_tmp, y_tmp) in enumerate(zip(xx,yy)):
+        for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
             getattr(self, f"line_{i}").set_xdata(x_tmp)
             getattr(self, f"line_{i}").set_ydata(y_tmp)
 
@@ -291,36 +357,6 @@ class BarFigureDataView(FigureDataView):
         y = self._y(self._data)
         for j, b in enumerate(self.bars):
             b.set_height(y[j])
-
-
-def x_data_time(data: AudioData) -> NDArray[np.float32]:
-    """ return time x grid"""
-    return data.time_x
-
-
-def y_data_time(data: AudioData) -> NDArray[np.float32]:
-    """ return time """
-    return data.time[:,0]
-
-
-def x_data_freq(data: AudioData) -> NDArray[np.float32]:
-    """ return frequency x grid"""
-    return data.freq_x
-
-
-def y_data_freq_abs(data: AudioData) -> NDArray[np.float32]:
-    """ return absolute value of normalized frequency"""
-    return np.abs(data.norm_freq())
-
-
-def y_data_freq_real(data: AudioData) -> NDArray[np.float32]:
-    """ returns real part of normalized frequencies """
-    return np.real(data.norm_freq())
-
-
-def y_data_freq_imag(data: AudioData) -> NDArray[np.float32]:
-    """ returns imaginary part of normalized frequencies """
-    return np.imag(data.norm_freq())
 
 
 class EqualizerFigureDataView(LineFigureDataView):
@@ -379,7 +415,7 @@ class EqualizerFigureDataView(LineFigureDataView):
     def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         self.set_data()
 
-    def time_change_callback(self, index_start: int, index_end: int) -> None:
+    def time_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         self.set_data()
 
     def _figure_clicked(self, event):
@@ -430,9 +466,34 @@ class EqualizerFigureDataView(LineFigureDataView):
         else:
             if event.button == "up":
                 self.bell_halve_width += 1
-            else:
+            elif self.bell_halve_width > 0:
                 self.bell_halve_width -= 1
             self._show_gauss()
+
+
+class TimeEqualizerFigureDataView(EqualizerFigureDataView):
+
+    def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
+        print("freq change callback")
+        pass
+
+    def time_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
+        self.ax.set_xlim((self._data.time_x[data.start_index], self._data.time_x[data.end_index]))
+        self.set_data()
+        print("time change callback")
+
+    def _figure_clicked(self, event):
+        """ Clicked on the figure """
+        if self.command_manager is None:
+            raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
+
+        payload = {"data_mode": self.data_mode}
+        if self.show_bell:
+            payload.update({"bell_halve_width": self.bell_halve_width})
+        else:
+            payload.update({"bell_halve_width": 0})
+
+        self.command_manager.call("timewindow_clicked", event, payload=payload)
 
 
 class EqualizerZoomFigureDataView(EqualizerFigureDataView):
@@ -443,23 +504,21 @@ class EqualizerZoomFigureDataView(EqualizerFigureDataView):
         self.ax.set_xlim((20, 20 + 2 * self.x_span))
 
     def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
-        self.ax.set_xlim((data.freq_x[index_start] - self.x_span, data.freq_x[index_end] + self.x_span))
+        #self.ax.set_xlim((data.freq_x[index_start] - self.x_span, data.freq_x[index_end] + self.x_span))
         self.set_data()
 
 
 class TimeLineFigureDataView(LineFigureDataView):
     # TODO: Add downsampler
-    def time_change_callback(self, index_start: int, index_end: int):
+    def time_change_callback(self, data:AudioData, index_start: int, index_end: int):
         """ Changes the current window interval """
-        self.set_selection_window((index_start / self._data.fs, index_end / self._data.fs))
-
-
-
-        xx = [x_tmp(self._data) for x_tmp in self._x]
-        yy = [y_tmp(self._data) for y_tmp in self._y]
-
-        print(f"x {xx[0].shape} y {yy[0].shape}")
+        self.set_selection_window((data.start_index / self._data.fs, data.end_index / self._data.fs))
         self.set_data()
+
+    def play_timecode_callback(self, data:AudioData, current_frame):
+        """ gets called when the audio is played with the current frame of the audio data """
+        self.set_selection_line(current_frame / data.fs)
+        print("callback timeline")
 
     def _figure_clicked(self, event):
         """ Mouse click callback"""
@@ -469,4 +528,4 @@ class TimeLineFigureDataView(LineFigureDataView):
 
     def key_press_callback(self, event):
         """ key press callback """
-
+        pass
