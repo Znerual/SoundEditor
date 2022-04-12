@@ -38,24 +38,20 @@ def test_four_trans_seq():
 
     ad._time_data[0:10, 0] = np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10))
     ad._four_trans_seq()
-    assert abs(-2 / 10 * np.imag(ad._freq_data[0, 0])) <= 1e-6
-    assert (-2 / 10 * np.imag(ad._freq_data[1, 0])) == 1
+    assert abs(-2 / 10 * np.imag(ad._freq_data[0, 0])) * ad.inv_damping[0] <= 1e-6
+    assert (-2 / 10 * np.imag(ad._freq_data[1, 0])) * ad.inv_damping[1] >= 1e-6
     for i in range(2, 10):
-        assert (-2 / 10 * np.imag(ad._freq_data[i, 0])) <= 1e-6
-    for i in range(10):
-        assert (-2 / 10 * np.real(ad._freq_data[3, 0])) <= 1e-6
+        assert (-2 / 10 * np.imag(ad._freq_data[i, 0])) * ad.inv_damping[i] <= 1e-6
 
 
 def test_ft():
     ad = AudioData.from_file("test.wav")
     ad._time_data[0:10, 0] = np.sin(np.arange(0, 2 * np.pi, 2 * np.pi / 10))
     ad.ft(0, 10)
-    assert abs(-2 / 10 * np.imag(ad._freq_data[0, 0])) <= 1e-6
-    assert (-2 / 10 * np.imag(ad._freq_data[1, 0])) == 1
-    for i in range(2, 10):
-        assert (-2 / 10 * np.imag(ad._freq_data[i, 0])) <= 1e-6
-    for i in range(10):
-        assert (-2 / 10 * np.real(ad._freq_data[3, 0])) <= 1e-6
+    assert abs(-2 / 10 * np.imag(ad.freq[0, 0]) <= 1e-6 * ad.damping[0])
+    assert abs(-2 / 10 * np.imag(ad.freq[1, 0])) >= 1e-6 * ad.damping[1]
+    for i in range(2, 6):
+        assert (-2 / 10 * np.imag(ad.freq[i, 0])) <= 1e-1 * ad.damping[i]
 
 
 def test_ift():
