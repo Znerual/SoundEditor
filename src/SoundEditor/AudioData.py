@@ -100,6 +100,7 @@ class AudioData:
     _seconds: float = -1
     _freq_sel_start_ind: int = -1
     _freq_sel_end_ind: int = -1
+    _a_coef: float = 0.25
 
     @classmethod
     def from_file(cls, filename: str) -> AudioData:
@@ -119,6 +120,8 @@ class AudioData:
         return instance
 
     def _four_trans_seq(self) -> None:
+        # TODO: convolute with decaying funciton to avoid boundary effects
+        # ft(1/(sqrt(2)* a) exp((-x^2)/(4(a^2)))) == exp(-f^2*a^2)
         """ transform a part of the audio data from time domain to frequency domain """
         from scipy.fft import fft, fftfreq
         if self._freq_sel_start_ind == -1 or self._freq_sel_end_ind == -1:
@@ -127,12 +130,15 @@ class AudioData:
         T = 1 / self.fs
         self._freq_x = fftfreq(N, T)[:N // 2]  # positive frequencies
 
+        # decay folding function for suppression gipp's phenomenon
+        damp_func = self.damping
+
         # create version controlled array and fill without creating history
         self._freq_data = VersionControlArray.empty((N, 2), dtype="complex64")
         self._freq_data.set_no_undo((slice(None, None, 1), 0),
-                                    fft(self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0]))
+                                    fft(damp_func * self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0]))
         self._freq_data.set_no_undo((slice(None, None, 1), 1),
-                                    fft(self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1]))
+                                    fft(damp_func * self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 1]))
 
     def find_peaks(self, n_dom: int = 6, chanel: int = 0) -> NDArray[np.int32]:
         """ find peaks in the frequency spectrum """
@@ -173,8 +179,19 @@ class AudioData:
     def N(self) -> int:
         return self._freq_sel_end_ind - self._freq_sel_start_ind
 
+    @property
+    def damping(self) -> NDArray[np.float32]:
+        a = self._a_coef
+        x = np.linspace(0, 1, num=self.N)
+        return np.exp((-(x - 0.5) ** 2) / (2*a ** 2)) #self._time_x[0:self.N] - self._time_x[self.N//2]
+
+    @property
+    def inv_damping(self) -> NDArray[np.float32]:
+        a = self._a_coef
+        x = np.linspace(0, 1, num=self.N)
+        return np.exp(((x - 0.5) ** 2) / (2*a ** 2))
+
     def ft(self, start_index: int, end_index: Optional[int] = None):
-        # TODO: convolute with decaying funciton to avoid boundary effects
         """ Fourier transforms the given audio segment """
         if not (start_index == self._freq_sel_start_ind and end_index == self._freq_sel_end_ind):
             self._freq_sel_start_ind = start_index
@@ -184,8 +201,10 @@ class AudioData:
     def ift(self):
         """ Inverse Fourier transform of the frequency signal back to audio signal """
         from scipy.fft import ifft
-        self._time_data[self.start_index:self.end_index, 0] = np.real(ifft(self.freq[:,0]))
-        self._time_data[self.start_index:self.end_index, 1] = np.real(ifft(self.freq[:,1]))
+
+        inv_damp_func = self.inv_damping
+        self._time_data[self.start_index:self.end_index, 0] = np.real(inv_damp_func * ifft(self.freq[:,0]))
+        self._time_data[self.start_index:self.end_index, 1] = np.real(inv_damp_func * ifft(self.freq[:,1]))
 
     @property
     def freq(self) -> VersionControlArray:
