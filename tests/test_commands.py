@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Any
 
-from SoundEditor.Commands import SetFreq, CommandManager, SetTimeFrame
+from SoundEditor.Commands import SetFreq, CommandManager, TimeToFreq
 from SoundEditor.DataView import DataView
 from SoundEditor.AudioData import AudioData, VersionControlException
 
@@ -48,7 +48,7 @@ def test_settimeframe():
     ad = AudioData.from_file("test.wav")
     ad.ft(0, 10)
     assert ad.N == 10
-    com = SetTimeFrame(20,40, ad)
+    com = TimeToFreq(20,40, ad)
     com.do()
     assert ad.N == 20
 
@@ -57,7 +57,7 @@ def test_undo_settimeframe():
     ad = AudioData.from_file("test.wav")
     ad.ft(0, 10)
     freq = copy.deepcopy(ad.freq)
-    com = SetTimeFrame(20, 40, ad)
+    com = TimeToFreq(20, 40, ad)
     com.do()
     assert ad.N == 20
     com.undo()
@@ -71,7 +71,7 @@ def test_undo_settimeframe():
 def test_redo_settimeframe():
     ad = AudioData.from_file("test.wav")
     ad.ft(0, 10)
-    com = SetTimeFrame(20, 40, ad)
+    com = TimeToFreq(20, 40, ad)
     com.do()
     freq = copy.deepcopy(ad.freq)
     assert ad.N == 20
@@ -90,9 +90,9 @@ def test_settimeframe_stack():
     ad = AudioData.from_file("test.wav")
     ad.ft(0, 10)
     freq0 = copy.deepcopy(ad.freq)
-    com1 = SetTimeFrame(20, 40, ad)
-    com2 = SetTimeFrame(60, 100, ad)
-    com3 = SetTimeFrame(200, 300, ad)
+    com1 = TimeToFreq(20, 40, ad)
+    com2 = TimeToFreq(60, 100, ad)
+    com3 = TimeToFreq(200, 300, ad)
     com1.do()
     freq1 = copy.deepcopy(ad.freq)
     com2.do()
@@ -121,7 +121,7 @@ def test_settimeframe_stack():
 def test_setfreq_settimeframe():
     ad = AudioData.from_file("test.wav")
     ad.ft(0, 32)
-    com_t = SetTimeFrame(20, 40, ad)
+    com_t = TimeToFreq(20, 40, ad)
     com_f = SetFreq(0,1, np.array([-10+10j]), chanel=0, target=ad)
     com_f.do()
     com_t.do()
