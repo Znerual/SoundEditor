@@ -55,10 +55,11 @@ class CommandManager:
     def data(self) -> AudioData:
         return self._data
 
-    def do(self, command: Command) -> None:
-        self._redo = []
+    def do(self, command: Command, no_undo=False) -> None:
         command.do()
-        self._history.append(command)
+        if not no_undo:
+            self._redo = []
+            self._history.append(command)
 
     def undo(self) -> None:
         if len(self._history) == 0:
