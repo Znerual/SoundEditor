@@ -1,4 +1,6 @@
 import warnings
+from types import NoneType
+
 import matplotlib.backend_bases
 
 import numpy as np
@@ -74,6 +76,12 @@ def key_pressed_callback(command_manager: CommandManager, event: tk.Event, calle
     for caller in callers:
         if "key_press_callback" in dir(caller):
             caller.key_press_callback(event)
+
+
+def update_data_callback(command_manager: CommandManager, event: NoneType, callers: List[DataView], payload: NoneType):
+    for caller in callers:
+        caller.time_change_callback(command_manager.data, 0, command_manager.data.time.shape[0])
+        caller.freq_change_callback(command_manager.data, 0, command_manager.data.time.shape[0])
 
 
 def timewindow_clicked(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView], payload: [Dict, Any]):
