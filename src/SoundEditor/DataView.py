@@ -26,12 +26,13 @@ class DataViewException(Exception):
 
 def x_data_time(data: AudioData) -> NDArray[np.float32]:
     """ return time x grid"""
-    return data.time_x
+
+    return data.time_x[::data.time.shape[0] // 480]
 
 
 def y_data_time(data: AudioData) -> NDArray[np.float32]:
     """ return time """
-    return data.time[:,0]
+    return data.time[::data.time.shape[0] // 480, 0]
 
 
 def x_window_time(data: AudioData) -> NDArray[np.float32]:
@@ -236,12 +237,12 @@ class FigureDataView(DataView):
         self._mouse_press_data: Optional[MouseEventData] = None
         self._mouse_pos: Tuple[float, float] = (-1.0, -1.0)
         self._mouse_pos_data: Tuple[float, float] = (-1.0, -1.0)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         if selection_window[0] != -1 and selection_window[1] != -1:
-            self.selection_line = self.ax.axvline(x=selection_window[0], color="red")
+            self.selection_line = self.ax.axvline(x=selection_window[0], color="red", zorder=3)
             self.selection_window = self.ax.axvspan(selection_window[0], selection_window[1], alpha=0.5)
 
         # add plots
-        self.canvas = FigureCanvasTkAgg(self.figure, master=self.frame)
         self.canvas.draw()
         self.canvas.mpl_connect("button_press_event", self._figure_mouse_press)
         self.canvas.mpl_connect("button_release_event", self._figure_mouse_release)
@@ -281,7 +282,6 @@ class LineFigureDataView(FigureDataView):
     """ Line Plot """
 
     def __init__(self, root,
-                 data: AudioData,
                  x: List[Callable[[AudioData], Union[NDArray[Any], VersionControlArray]]],
                  y: List[Callable[[AudioData], Union[NDArray[Any], VersionControlArray]]],
                  label: Optional[str] = None,
@@ -289,12 +289,11 @@ class LineFigureDataView(FigureDataView):
                  alpha: float = 1.0, *args, **kwargs):
         """ Initialize line plot """
         super().__init__(root, *args, **kwargs)
-        self._data = data
         self._x = x
         self._y = y
 
-        xx = [x_tmp(self._data) for x_tmp in x]
-        yy = [y_tmp(self._data) for y_tmp in y]
+        xx = [x_tmp(self.command_manager.data) for x_tmp in x]
+        yy = [y_tmp(self.command_manager.data) for y_tmp in y]
 
         for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
             setattr(self, f"line_{i}", self.ax.plot(x_tmp, y_tmp, label=label, color=color, alpha=alpha)[0])
@@ -302,8 +301,8 @@ class LineFigureDataView(FigureDataView):
     def set_data(self):
         """ change data """
 
-        xx = [x(self._data) for x in self._x]
-        yy = [y(self._data) for y in self._y]
+        xx = [x(self.command_manager.data) for x in self._x]
+        yy = [y(self.command_manager.data) for y in self._y]
 
         for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
             getattr(self, f"line_{i}").set_xdata(x_tmp)
@@ -316,7 +315,6 @@ class ScatterFigureDataView(FigureDataView):
     """ Scatter plot """
 
     def __init__(self, root,
-                 data: AudioData,
                  x: Callable[[AudioData], Union[VersionControlArray, NDArray[Any]]],
                  y: Callable[[AudioData], Union[VersionControlArray, NDArray[Any]]],
                  label: Optional[str] = None,
@@ -324,14 +322,13 @@ class ScatterFigureDataView(FigureDataView):
                  alpha: float = 1.0, *args, **kwargs):
         """ Initialize scatter plot """
         super().__init__(root, *args, **kwargs)
-        self._data = data
         self._x = x
         self._y = y
-        self.points = self.ax.scatter(x(data), y(data), label=label, color=color, alpha=alpha)
+        self.points = self.ax.scatter(x(self.command_manager.data), y(self.command_manager.data), label=label, color=color, alpha=alpha)
 
     def set_data(self):
         """ change data """
-        data = np.vstack((self._x(self._data), self._y(self._data))).transpose()
+        data = np.vstack((self._x(self.command_manager.data), self._y(self.command_manager.data))).transpose()
         self.points.set_offsets(data)
 
 
@@ -339,7 +336,6 @@ class BarFigureDataView(FigureDataView):
     """ Bar plot """
 
     def __init__(self, root,
-                 data : AudioData,
                  x: Callable[[AudioData], Union[VersionControlArray, NDArray[Any]]],
                  y: Callable[[AudioData], Union[VersionControlArray, NDArray[Any]]],
                  label: Optional[str] = None,
@@ -347,14 +343,13 @@ class BarFigureDataView(FigureDataView):
                  alpha: float = 1.0, *args, **kwargs):
         """ Initialize bar plot """
         super().__init__(root, *args, **kwargs)
-        self._data = data
         self._x = x
         self._y = y
-        self.bars = self.ax.bar(x(data), y(data), label=label, color=color, alpha=alpha)
+        self.bars = self.ax.bar(x(self.command_manager.data), y(self.command_manager.data), label=label, color=color, alpha=alpha)
 
     def set_data(self):
         """ change data """
-        y = self._y(self._data)
+        y = self._y(self.command_manager.data)
         for j, b in enumerate(self.bars):
             b.set_height(y[j])
 
@@ -365,7 +360,7 @@ class EqualizerFigureDataView(LineFigureDataView):
         super().__init__(*args, **kwargs)
 
         # settings for gaussian curve
-        self.bell, = self.ax.plot([self._x[0](self._data)[0]], [self._y[0](self._data)[0]], 'o', ms=4, alpha=0.8, color='red', visible=False)
+        self.bell, = self.ax.plot([self._x[0](self.command_manager.data)[0]], [self._y[0](self.command_manager.data)[0]], 'o', ms=4, alpha=0.8, color='red', visible=False)
         self.bell_halve_width = 2
         self.show_bell = False
 
@@ -451,7 +446,7 @@ class EqualizerFigureDataView(LineFigureDataView):
             self.bell.set_visible(True)
             self.canvas.draw()
         else:
-            d_x = self._x[0](self._data)[1] - self._x[0](self._data)[0]
+            d_x = self._x[0](self.command_manager.data)[1] - self._x[0](self.command_manager.data)[0]
             curve = bell_curve(halve_width=self.bell_halve_width) * self._mouse_pos_data[1]
             xx = np.arange(-self.bell_halve_width, self.bell_halve_width + 1, 1, dtype="float") * d_x + self._mouse_pos_data[0]
 
@@ -474,13 +469,11 @@ class EqualizerFigureDataView(LineFigureDataView):
 class TimeEqualizerFigureDataView(EqualizerFigureDataView):
 
     def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
-        print("freq change callback")
         pass
 
     def time_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
-        self.ax.set_xlim((self._data.time_x[data.start_index], self._data.time_x[data.end_index]))
+        self.ax.set_xlim((self.command_manager.data.time_x[data.start_index], self.command_manager.data.time_x[data.end_index - 1]))
         self.set_data()
-        print("time change callback")
 
     def _figure_clicked(self, event):
         """ Clicked on the figure """
@@ -512,13 +505,12 @@ class TimeLineFigureDataView(LineFigureDataView):
     # TODO: Add downsampler
     def time_change_callback(self, data:AudioData, index_start: int, index_end: int):
         """ Changes the current window interval """
-        self.set_selection_window((data.start_index / self._data.fs, data.end_index / self._data.fs))
         self.set_data()
+        self.set_selection_window((data.start_index / self.command_manager.data.fs, data.end_index / self.command_manager.data.fs))
 
     def play_timecode_callback(self, data:AudioData, current_frame):
         """ gets called when the audio is played with the current frame of the audio data """
         self.set_selection_line(current_frame / data.fs)
-        print("callback timeline")
 
     def _figure_clicked(self, event):
         """ Mouse click callback"""
