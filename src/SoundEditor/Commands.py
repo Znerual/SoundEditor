@@ -105,7 +105,7 @@ class SetTime(Command):
 
     def do(self) -> None:
         """ Change time data and notify listeners """
-        print("set time")
+        #print("set time")
         self.target.time[self.start_index:self.end_index, self.chanel] = self.value
         #for listener in self.listener:
         #    listener.time_change_callback(self.target, self.start_index, self.end_index)
