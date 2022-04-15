@@ -168,13 +168,14 @@ class AudioData:
         # fill audio data with loaded information
         sound = pydub.AudioSegment.from_file(filename)
         raw_time_data, instance._fs, instance._sample_width, instance._channels = pydub_to_np(
-            sound)  # sf.read(filename, dtype=np.double)
+            sound)
         instance._time_data = VersionControlArray(raw_time_data)
         instance._seconds = instance._time_data.shape[0] / instance.fs
         instance._time_x = np.arange(0, instance.seconds, 1 / instance.fs, dtype=np.float32)
 
         # do the initial fourier transform
         if instance.seconds > 10:
+            print(f"Long File fs:{instance.fs}, ")
             instance.ft(0, 10 * instance.fs)
         else:
             instance.ft(0, instance.time.shape[0])
@@ -206,11 +207,12 @@ class AudioData:
         # create version controlled array and fill without creating history
         self._freq_data = VersionControlArray.empty((N, 2), dtype="complex64")
         self._freq_data.set_no_undo((slice(None, None, 1), 0),
-                                    fft(damp_func * self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind,
-                                                    0]))
-        self._freq_data.set_no_undo((slice(None, None, 1), 1),
-                                    fft(damp_func * self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind,
-                                                    1]))
+                                    fft(damp_func * self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind, 0]))
+
+        if self._channels == 2:
+            self._freq_data.set_no_undo((slice(None, None, 1), 1),
+                                        fft(damp_func * self._time_data[self._freq_sel_start_ind:self._freq_sel_end_ind,
+                                                        1]))
 
     def find_peaks(self, n_dom: int = 6, chanel: int = 0) -> NDArray[np.int32]:
         """ find peaks in the frequency spectrum """
