@@ -20,7 +20,7 @@ class Configuration(dict):
             super().__setitem__(key, str(value))
 
         with open(Path(self._project_dir, "res", "file_config.yml"), "w") as file:
-            yaml.dump(self, file)
+            yaml.dump(dict(self), file)
 
     def get(self, key, default=None):
         if key in self:
@@ -32,5 +32,8 @@ class Configuration(dict):
 
     def save(self):
         with open(Path(self._project_dir, "res", "file_config.yml"), "r") as file:
-            self.update(yaml.safe_load(file))
+            saved_config = yaml.safe_load(file)
+        if not saved_config is None:
+            self.update(saved_config)
+
 
