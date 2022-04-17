@@ -361,3 +361,7 @@ class AudioData:
         if self._seconds == -1:
             raise AudioDataException("No seconds information available. Check if AudioData was loaded correctly.")
         return self._seconds
+
+    @property
+    def channels(self):
+        return self._channels
