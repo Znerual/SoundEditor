@@ -24,66 +24,138 @@ class DataViewException(Exception):
     pass
 
 
-def x_data_time(data: AudioData) -> NDArray[np.float32]:
+def zoom_invariant_view(data: NDArray[Any], limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> int:
+    """ returns a portion of the data that stays invariant under zooming """
+    all_visible = data.shape[0] / points_on_screen
+    if limits == (-1, -1):
+        return int(all_visible)
+
+    step = int((limits[1] - limits[0]) / (max_limits[1] - max_limits[0]) * all_visible)
+
+    return step if step > 0 else 1
+
+
+def max_sample(x: NDArray[Any], f) -> NDArray[Any]:
+    """ returns maximum of every f parts of the array"""
+    xp = np.r_[x, np.nan + np.zeros((-len(x) % f,))]
+    # reshape, so each chunk gets its own row, and then take mean
+    return np.nanmax(xp.reshape(-1, f), axis=-1)
+
+
+def min_sample(x: NDArray[Any], f) -> NDArray[Any]:
+    """ returns minimum of every f parts of the array"""
+    xp = np.r_[x, np.nan + np.zeros((-len(x) % f,))]
+    # reshape, so each chunk gets its own row, and then take mean
+    return np.nanmin(xp.reshape(-1, f), axis=-1)
+
+
+def down_sample(x: NDArray[Any], f) -> NDArray[Any]:
+    # https://stackoverflow.com/questions/41815361/average-every-x-numbers-in-numpy-array
+    # pad to a multiple of f, so we can reshape
+    # use nan for padding, so we needn't worry about denominator in
+    # last chunk
+    xp = np.r_[x + 1, np.nan + np.zeros((-len(x) % f,))]
+    # reshape, so each chunk gets its own row, and then take mean
+    return np.nanmean(xp.reshape(-1, f), axis=-1) - 1
+
+
+def x_data_time(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 1024) -> NDArray[np.float32]:
     """ return time x grid"""
 
-    return data.time_x[::data.time.shape[0] // 480]
+    return data.time_x[::zoom_invariant_view(data.time_x, limits, max_limits, points_on_screen)]
 
 
-def y_data_time(data: AudioData) -> NDArray[np.float32]:
+def y_data_time(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 1024) -> NDArray[np.float32]:
     """ return time """
-    return data.time[::data.time.shape[0] // 480, 0]
+    return down_sample(np.abs(data.time[:, 0]), zoom_invariant_view(data.time_x, limits, max_limits, points_on_screen))
 
 
-def x_window_time(data: AudioData) -> NDArray[np.float32]:
+def x_window_time(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ return x data of selected time window """
-    return data.time_x[data.start_index:data.end_index]
+    return data.time_x[data.start_index:data.end_index:zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits, points_on_screen)]
 
 
-def x_rel_window_time(data: AudioData) -> NDArray[np.float32]:
+def x_rel_window_time(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ return x data relative to current selected window"""
-    return data.time_x[0:data.N]
+    return data.time_x[0:data.N:zoom_invariant_view(data.time_x[0:data.N], limits, max_limits, points_on_screen)]
 
 
-def y_window_time(data: AudioData) -> NDArray[np.float32]:
-    """ return selected window of time """
-    return data.time[data.start_index:data.end_index, 0]
+def y_window_time_max(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
+    """ return maximum of selected window of time """
+    return max_sample(data.time[data.start_index:data.end_index, 0], zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits, points_on_screen))
 
 
-def y_window_damping(data: AudioData) -> NDArray[np.float32]:
+def y_window_time_min(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
+    """ returns minimum of selected window of time"""
+    return min_sample(data.time[data.start_index:data.end_index, 0],
+               zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits, points_on_screen))
+
+
+def y_window_damping_min(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ return damping of time before fourier transformation """
-    return data.damping
+    return min_sample(data.damping, zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits, points_on_screen))
 
 
-def y_window_time_damped(data: AudioData) -> NDArray[np.float32]:
+def y_window_damping_max(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
+    """ return damping of time before fourier transformation """
+    return max_sample(data.damping, zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits, points_on_screen))
+
+
+def y_window_time_damped_min(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ returns damped audio data """
-    return data.time[data.start_index:data.end_index, 0] * data.damping
+
+    return min_sample(data.time[data.start_index:data.end_index, 0] * data.damping,
+                           zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits,
+                                               points_on_screen))
 
 
-def y_window_invdamping(data: AudioData) -> NDArray[np.float32]:
+def y_window_time_damped_max(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float],
+                             points_on_screen=480) -> NDArray[np.float32]:
+    """ returns damped audio data """
+
+    return max_sample(data.time[data.start_index:data.end_index, 0] * data.damping,
+                      zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits,
+                                          points_on_screen))
+
+
+def y_window_invdamping(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ returns the inverse damping """
-    return data.inv_damping
+    return data.inv_damping[::zoom_invariant_view(data.time_x[data.start_index:data.end_index], limits, max_limits, points_on_screen)]
 
 
-def x_data_freq(data: AudioData) -> NDArray[np.float32]:
+def x_data_freq(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ return frequency x grid"""
-    return data.freq_x
+    return data.freq_x[::zoom_invariant_view(data.freq_x, limits, max_limits, points_on_screen)]
 
 
-def y_data_freq_abs(data: AudioData) -> NDArray[np.float32]:
+def y_data_freq_abs(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ return absolute value of normalized frequency"""
-    return np.abs(data.norm_freq())
+    norm_freq = data.norm_freq()
+    return down_sample(np.abs(norm_freq), zoom_invariant_view(norm_freq, limits, max_limits, points_on_screen))
 
 
-def y_data_freq_real(data: AudioData) -> NDArray[np.float32]:
+def y_data_freq_real_min(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ returns real part of normalized frequencies """
-    return np.real(data.norm_freq())
+    norm_freq = data.norm_freq()
+    return min_sample(np.real(norm_freq),zoom_invariant_view(norm_freq, limits, max_limits, points_on_screen))
 
 
-def y_data_freq_imag(data: AudioData) -> NDArray[np.float32]:
+def y_data_freq_real_max(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
+    """ returns real part of normalized frequencies """
+    norm_freq = data.norm_freq()
+    return max_sample(np.real(norm_freq),zoom_invariant_view(norm_freq, limits, max_limits, points_on_screen))
+
+
+def y_data_freq_imag_min(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
     """ returns imaginary part of normalized frequencies """
-    return np.imag(data.norm_freq())
+    norm_freq = data.norm_freq()
+    return min_sample(np.imag(norm_freq),zoom_invariant_view(norm_freq, limits, max_limits, points_on_screen))
 
+
+def y_data_freq_imag_max(data: AudioData, limits: Tuple[float, float], max_limits: Tuple[float, float], points_on_screen = 480) -> NDArray[np.float32]:
+    """ returns imaginary part of normalized frequencies """
+    norm_freq = data.norm_freq()
+    return max_sample(np.imag(norm_freq),zoom_invariant_view(norm_freq, limits, max_limits, points_on_screen))
 
 @dataclass(frozen=True, eq=False)
 class MouseEventData:
@@ -100,6 +172,9 @@ class DataView:
         pass
 
     def play_timecode_callback(self, data: AudioData, current_frame) -> None:
+        pass
+
+    def reset_view_callback(self, data: AudioData) -> None:
         pass
 
 
@@ -216,7 +291,7 @@ class FigureDataView(DataView):
             self.zoom_1d(self.canvas, event, self.ax.get_ylim, self.ax.set_ylim, event.ydata)
         elif 0 >= y < x:
             self.zoom_1d(self.canvas, event, self.ax.get_xlim, self.ax.set_xlim, event.xdata)
-        else:
+        elif 0 <= x <= 1 and 0 <= y <= 1:
             self.zoom_2d(self.canvas, event, (self.ax.get_xlim, self.ax.get_ylim), (self.ax.set_xlim, self.ax.set_ylim), (event.xdata, event.ydata))
 
     def __init__(self, root: tk.Tk,
@@ -282,27 +357,36 @@ class LineFigureDataView(FigureDataView):
     """ Line Plot """
 
     def __init__(self, root,
-                 x: List[Callable[[AudioData], Union[NDArray[Any], VersionControlArray]]],
-                 y: List[Callable[[AudioData], Union[NDArray[Any], VersionControlArray]]],
-                 label: Optional[str] = None,
+                 x: List[Callable[[AudioData, Tuple[float, float], Tuple[float, float], int], Union[NDArray[Any], VersionControlArray]]],
+                 y: List[Callable[[AudioData, Tuple[float, float], Tuple[float, float], int], Union[NDArray[Any], VersionControlArray]]],
+                 legend: List[str] = [],
                  color: Optional[Union[str, Tuple[float, float, float], Tuple[float, float, float, float]]] = None,
-                 alpha: float = 1.0, *args, **kwargs):
+                 alpha: float = 1.0,
+                 points_per_view:int = 480, *args, **kwargs):
         """ Initialize line plot """
         super().__init__(root, *args, **kwargs)
         self._x = x
         self._y = y
+        self._points_per_view = points_per_view
+        xx = [x_tmp(self.command_manager.data, (-1, -1), (-1, -1), self._points_per_view) for x_tmp in x]
+        yy = [y_tmp(self.command_manager.data, (-1, -1), (-1, -1), self._points_per_view) for y_tmp in y]
 
-        xx = [x_tmp(self.command_manager.data) for x_tmp in x]
-        yy = [y_tmp(self.command_manager.data) for y_tmp in y]
-
+        # create plots
         for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
-            setattr(self, f"line_{i}", self.ax.plot(x_tmp, y_tmp, label=label, color=color, alpha=alpha)[0])
+            setattr(self, f"line_{i}", self.ax.plot(x_tmp, y_tmp, color=color, alpha=alpha)[0])
+
+        # create legend
+        if not legend == []:
+            self.ax.legend(legend, loc='upper right')
+
+        # set maximal xlim for down sampling
+        self.xlim_max = self.ax.get_xlim()
 
     def set_data(self):
         """ change data """
 
-        xx = [x(self.command_manager.data) for x in self._x]
-        yy = [y(self.command_manager.data) for y in self._y]
+        xx = [x(self.command_manager.data, self.ax.get_xlim(), self.xlim_max, self._points_per_view) for x in self._x]
+        yy = [y(self.command_manager.data, self.ax.get_xlim(), self.xlim_max, self._points_per_view) for y in self._y]
 
         for i, (x_tmp, y_tmp) in enumerate(zip(xx, yy)):
             getattr(self, f"line_{i}").set_xdata(x_tmp)
@@ -310,7 +394,12 @@ class LineFigureDataView(FigureDataView):
 
         self.canvas.draw()
 
+    def _figure_scrolled(self, event):
+        super()._figure_scrolled(event)
 
+        self.set_data()
+
+'''
 class ScatterFigureDataView(FigureDataView):
     """ Scatter plot """
 
@@ -353,6 +442,8 @@ class BarFigureDataView(FigureDataView):
         for j, b in enumerate(self.bars):
             b.set_height(y[j])
 
+'''
+
 
 class EqualizerFigureDataView(LineFigureDataView):
     """ Equalizer plot """
@@ -360,7 +451,7 @@ class EqualizerFigureDataView(LineFigureDataView):
         super().__init__(*args, **kwargs)
 
         # settings for gaussian curve
-        self.bell, = self.ax.plot([self._x[0](self.command_manager.data)[0]], [self._y[0](self.command_manager.data)[0]], 'o', ms=4, alpha=0.8, color='red', visible=False)
+        self.bell, = self.ax.plot([self._x[0](self.command_manager.data, (-1,-1), (-1,-1), 20)[0]], [self._y[0](self.command_manager.data, (-1,-1), (-1,-1), 20)[0]], 'o', ms=4, alpha=0.8, color='red', visible=False)
         self.bell_halve_width = 2
         self.show_bell = False
 
@@ -413,12 +504,22 @@ class EqualizerFigureDataView(LineFigureDataView):
     def time_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         self.set_data()
 
+    def reset_view_callback(self, data: AudioData) -> None:
+        """ reset the axis to match the datas dimensions"""
+        limits = [(min(self._y[i](data, (-1, -1), (-1, -1))), max(self._y[i](data, (-1, -1), (-1, -1)))) for i in range(len(self._y))]
+        y_min, y_max = min(limits, key=lambda x: x[0])[0], max(limits, key=lambda x: x[1])[1]
+
+        self.ax.set_xlim((0, data.seconds))
+        self.ax.set_ylim((y_min, y_max))
+        self.xlim_max = (0, data.seconds)
+        self.canvas.draw()
+
     def _figure_clicked(self, event):
         """ Clicked on the figure """
         if self.command_manager is None:
             raise CommandException("DataView does not know about the CommandManager. Callback can not be started")
 
-        payload = {"data_mode" :self.data_mode}
+        payload = {"data_mode": self.data_mode}
         if self.show_bell:
             payload.update({"bell_halve_width": self.bell_halve_width})
         else:
@@ -446,23 +547,35 @@ class EqualizerFigureDataView(LineFigureDataView):
             self.bell.set_visible(True)
             self.canvas.draw()
         else:
-            d_x = self._x[0](self.command_manager.data)[1] - self._x[0](self.command_manager.data)[0]
+            d_x = self._x[0](self.command_manager.data, (-1, -1), (-1, -1))[1] - self._x[0](self.command_manager.data, (-1,-1), (-1,-1))[0]
             curve = bell_curve(halve_width=self.bell_halve_width) * self._mouse_pos_data[1]
             xx = np.arange(-self.bell_halve_width, self.bell_halve_width + 1, 1, dtype="float") * d_x + self._mouse_pos_data[0]
 
-            self.bell.set_data(xx, curve)
+            # downsample the number of dots
+            if xx.shape[0] < 20:
+                self.bell.set_data(xx, curve)
+            else:
+                self.bell.set_data(xx[::xx.shape[0] // 20], curve[::xx.shape[0] // 20])
+
             self.bell.set_visible(True)
             self.canvas.draw()
 
     def _figure_scrolled(self, event):
-        """ scrolled on zoom window """
+        """ scrolled on window """
         if not self.show_bell:
             super()._figure_scrolled(event)
         else:
             if event.button == "up":
-                self.bell_halve_width += 1
+                if self.bell_halve_width > 8:
+                    self.bell_halve_width = int(1.2 * self.bell_halve_width)
+                else:
+                    self.bell_halve_width += 1
             elif self.bell_halve_width > 0:
-                self.bell_halve_width -= 1
+                if self.bell_halve_width > 8:
+                    self.bell_halve_width = int(self.bell_halve_width // 1.2)
+                else:
+                    self.bell_halve_width -= 1
+
             self._show_gauss()
 
 
@@ -474,6 +587,10 @@ class TimeEqualizerFigureDataView(EqualizerFigureDataView):
     def time_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         self.ax.set_xlim((self.command_manager.data.time_x[data.start_index], self.command_manager.data.time_x[data.end_index - 1]))
         self.set_data()
+
+    def reset_view_callback(self, data: AudioData) -> None:
+        """ reset the axis to match the datas dimensions"""
+        self.xlim_max = self.ax.get_xlim()
 
     def _figure_clicked(self, event):
         """ Clicked on the figure """
@@ -495,6 +612,13 @@ class EqualizerZoomFigureDataView(EqualizerFigureDataView):
         super().__init__(*args, **kwargs)
         self.x_span = x_span
         self.ax.set_xlim((20, 20 + 2 * self.x_span))
+        self.xlim_max = (0, max(self.command_manager.data.freq_x))
+        self.set_data()
+
+    def reset_view_callback(self, data: AudioData) -> None:
+        """ reset the axis to match the datas dimensions"""
+        self.ax.set_xlim((20, 20 + 2 * self.x_span))
+        self.xlim_max = (0, max(self.command_manager.data.freq_x))
 
     def freq_change_callback(self, data: AudioData, index_start: int, index_end: int) -> None:
         #self.ax.set_xlim((data.freq_x[index_start] - self.x_span, data.freq_x[index_end] + self.x_span))
@@ -502,6 +626,11 @@ class EqualizerZoomFigureDataView(EqualizerFigureDataView):
 
 
 class TimeLineFigureDataView(LineFigureDataView):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.xlim_max = (0, self.command_manager.data.seconds)
+
     # TODO: Add downsampler
     def time_change_callback(self, data:AudioData, index_start: int, index_end: int):
         """ Changes the current window interval """
@@ -511,6 +640,13 @@ class TimeLineFigureDataView(LineFigureDataView):
     def play_timecode_callback(self, data:AudioData, current_frame):
         """ gets called when the audio is played with the current frame of the audio data """
         self.set_selection_line(current_frame / data.fs)
+
+    def reset_view_callback(self, data: AudioData) -> None:
+        """ reset the axis to match the datas dimensions"""
+        self.ax.set_xlim((0, data.seconds))
+        self.ax.set_ylim((min(data.time[::data.time.shape[0] // 400,0]), max(data.time[::data.time.shape[0] // 400,0])))
+        self.xlim_max = (0, data.seconds)
+        self.canvas.draw()
 
     def _figure_clicked(self, event):
         """ Mouse click callback"""
