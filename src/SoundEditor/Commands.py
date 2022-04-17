@@ -218,4 +218,3 @@ class Play(Command):
 
     def redo(self) -> None:
         pass
-    
