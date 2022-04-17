@@ -10,10 +10,10 @@ from SoundEditor.Callbacks import equalizer_callback, timeline_callback, key_pre
     update_data_callback
 from SoundEditor.Commands import SetFreq
 from SoundEditor.Configuration import Configuration
-from SoundEditor.DataView import TimeLineFigureDataView, BarFigureDataView, EqualizerFigureDataView, TOOLBAR_POSITION, \
+from SoundEditor.DataView import TimeLineFigureDataView, EqualizerFigureDataView, TOOLBAR_POSITION, \
     EqualizerZoomFigureDataView, TimeEqualizerFigureDataView
-from SoundEditor.DataView import x_data_freq, y_data_freq_imag, y_data_freq_real, y_data_freq_abs, x_data_time, \
-    y_data_time, x_window_time, y_window_time_damped, y_window_time, y_window_invdamping, y_window_damping, \
+from SoundEditor.DataView import x_data_freq, y_data_freq_imag_min, y_data_freq_imag_max, y_data_freq_real_min, y_data_freq_real_max, y_data_freq_abs, x_data_time, \
+    y_data_time, x_window_time, y_window_time_damped_min, y_window_time_damped_max, y_window_time_min, y_window_time_max, y_window_invdamping, y_window_damping_min, y_window_damping_max, \
     x_rel_window_time
 
 
@@ -101,22 +101,28 @@ class Application:
         # create main figures
         self.equ_dv = EqualizerFigureDataView(root=self.frequency_frame,
                                               x=[x_data_freq, x_data_freq, x_data_freq],
-                                              y=[y_data_freq_abs, y_data_freq_real, y_data_freq_imag],
+                                              y=[y_data_freq_abs, y_data_freq_real_max, y_data_freq_imag_max],
+                                              legend=["Abs", "Real", "Imag"],
                                               command_manager=self.manager,
                                               position=tk.LEFT,
+                                              alpha=0.75,
                                               toolbar=True)
 
         self.equ_zoom_dv = EqualizerZoomFigureDataView(x_span=200,
                                                        root=self.root2,
                                                        position=tk.TOP,
-                                                       x=[x_data_freq, x_data_freq, x_data_freq],
-                                                       y=[y_data_freq_abs, y_data_freq_real, y_data_freq_imag],
+                                                       x=[x_data_freq, x_data_freq, x_data_freq, x_data_freq,
+                                                          x_data_freq],
+                                                       y=[y_data_freq_abs, y_data_freq_real_min, y_data_freq_real_max,
+                                                          y_data_freq_imag_min, y_data_freq_imag_max],
+                                                       alpha=0.6,
+                                                       legend=["Abs", "Min Real", "Max Real", "Min Imag", "Max Imag"],
                                                        command_manager=self.manager,
                                                        toolbar=True)
 
         self.time_equ_dv = TimeEqualizerFigureDataView(root=self.root3,
-                                                       x=[x_window_time, x_window_time],
-                                                       y=[y_window_time, y_window_time_damped],
+                                                       x=[x_window_time, x_window_time, x_window_time, x_window_time],
+                                                       y=[y_window_time_max, y_window_time_min, y_window_time_damped_max, y_window_time_damped_min],
                                                        command_manager=self.manager,
                                                        position=tk.BOTTOM,
                                                        toolbar=True)
