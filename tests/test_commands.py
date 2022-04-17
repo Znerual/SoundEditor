@@ -118,21 +118,6 @@ def test_settimeframe_stack():
     assert freq0._redo == ad.freq._redo
 
 
-def test_setfreq_settimeframe():
-    ad = AudioData.from_file("test.wav")
-    ad.ft(0, 32)
-    com_t = TimeToFreq(20, 40, ad)
-    com_f = SetFreq(0,1, np.array([-10+10j]), chanel=0, target=ad)
-    com_f.do()
-    com_t.do()
-    assert ad.freq._history == []
-    with pytest.raises(VersionControlException):
-        com_f.undo()
-    com_t.undo()
-    assert len(ad.freq._history) == 1
-    com_f.undo()
-
-
 def test_command_manager():
     ad = AudioData.from_file("test.wav")
     ad.ft(0, 2)
