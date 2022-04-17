@@ -58,36 +58,40 @@ class TimeToFreq(Command):
         self.end_index = end_index
         self.target = target
         self.listener = listener
-        self.history_freq: Optional[Tuple[int, int, VersionControlArray]] = None
-        self.redo_freq: Optional[Tuple[int, int, VersionControlArray]] = None
+        self._history_indices = (-1, -1)
 
     def do(self) -> None:
         """ changes the current time frame and does the fourier transformation """
-        self.redo_freq = None
-        self.history_freq = (self.target.start_index, self.target.end_index, copy.deepcopy(self.target.freq))
+        history_freq = copy.deepcopy(self.target.freq.history)
+        self._history_indices = (self.target.start_index, self.target.end_index)
         self.target.ft(self.start_index, self.end_index)
+        self.target.freq.history.extend(history_freq)
+
         for listener in self.listener:
             listener.freq_change_callback(self.target, self.start_index, self.end_index)
             listener.time_change_callback(self.target, self.start_index, self.end_index)
 
     def undo(self) -> None:
         """ undos the change of time frame"""
-        if self.history_freq is None:
+        if self._history_indices == (-1, -1) or (self.target.start_index, self.target.end_index) == (self._history_indices[0], self._history_indices[1]):
             raise VersionControlException("Can't undo command because of empty history.")
-        self.redo_freq = (self.start_index, self.end_index, copy.deepcopy(self.target.freq))
-        self.target._freq_sel_start_ind, self.target._freq_sel_end_ind, self.target._freq_data = self.history_freq
-        self.history_freq = None
+        history_freq = copy.deepcopy(self.target.freq.history)
+        self.target.ft(self._history_indices[0], self._history_indices[1])
+        self.target.freq.history.extend(history_freq)
+
         for listener in self.listener:
             listener.freq_change_callback(self.target, self.target.start_index, self.target.end_index)
             listener.time_change_callback(self.target, self.start_index, self.end_index)
 
     def redo(self) -> None:
         """ redos the change of time frame """
-        if self.redo_freq is None:
+        if (self.target.start_index, self.target.end_index) == (self.start_index, self.end_index):
             VersionControlException("Can't redo command because of empty history.")
-        self.history_freq = (self.target.start_index, self.end_index,copy.deepcopy(self.target.freq))
-        self.target._freq_sel_start_ind, self.target._freq_sel_end_ind, self.target._freq_data = self.redo_freq
-        self.redo_freq = None
+        history_freq = copy.deepcopy(self.target.freq.history)
+        self._history_indices = (self.target.start_index, self.target.end_index)
+        self.target.ft(self.start_index, self.end_index)
+        self.target.freq.history.extend(history_freq)
+
         for listener in self.listener:
             listener.freq_change_callback(self.target, self.start_index, self.end_index)
             listener.time_change_callback(self.target, self.start_index, self.end_index)
@@ -168,8 +172,8 @@ class PlaySegment(threading.Thread):
         # assert frames == args.blocksize
         if status.output_underflow:
             print('Output underflow: increase blocksize?', file=sys.stderr)
-            raise sd.CallbackAbort
-        assert not status
+            #raise sd.CallbackAbort
+        #assert not status
 
         end_index = self.current_index + self.block_size if self.current_index + self.block_size <= self.end_index else self.end_index
         data = self.target.time[self.current_index:end_index]
@@ -190,7 +194,7 @@ class PlaySegment(threading.Thread):
         event = threading.Event()
         stream = sd.OutputStream(
             samplerate=self.target.fs, blocksize=self.block_size,
-            device=sd.default.device[1], channels=2,
+            device=sd.default.device[1], channels=self.target.channels,
             callback=self.callback, finished_callback=event.set)
 
         with stream:
@@ -214,3 +218,4 @@ class Play(Command):
 
     def redo(self) -> None:
         pass
+    
