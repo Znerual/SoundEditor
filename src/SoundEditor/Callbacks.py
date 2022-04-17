@@ -82,6 +82,7 @@ def update_data_callback(command_manager: CommandManager, event: NoneType, calle
     for caller in callers:
         caller.time_change_callback(command_manager.data, 0, command_manager.data.time.shape[0])
         caller.freq_change_callback(command_manager.data, 0, command_manager.data.time.shape[0])
+        caller.reset_view_callback(command_manager.data)
 
 
 def timewindow_clicked(command_manager: CommandManager, event: matplotlib.backend_bases.MouseEvent, callers: List[DataView], payload: [Dict, Any]):
@@ -114,7 +115,7 @@ def timewindow_clicked(command_manager: CommandManager, event: matplotlib.backen
         warnings.warn("Missing data_mode parameter in equalizer_callback's payload", RuntimeWarning)
         payload["data_mode"] = DATA_MODE.REPLACE
 
-    ind_start = ind - payload["bell_halve_width"]  #
+    ind_start = ind - payload["bell_halve_width"]
     ind_end = ind + payload["bell_halve_width"] + 1
 
     if payload["data_mode"] == DATA_MODE.REPLACE:
