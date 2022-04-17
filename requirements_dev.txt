@@ -16,3 +16,4 @@ pytest-cov==2.12.1
 mypy==0.910
 PyYAML==6.0
 pydub==0.25.1
+psutil==5.9.0

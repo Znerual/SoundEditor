@@ -11,3 +11,4 @@ SoundFile==0.10.3.post1
 wheel==0.36.2
 PyYAML==6.0
 pydub==0.25.1
+psutil==5.9.0
